@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* rsv.pizza-flavoured design tokens: dark bar-room default, brutalist type, tomato + cheese accents. */
+@theme {
+  --color-ink: #0a0a0a;
+  --color-ink-2: #141414;
+  --color-ink-3: #1f1f1f;
+  --color-line: #2e2e2e;
+  --color-paper: #f5f1e8;
+  --color-mute: #9a958a;
+  --color-tomato: #ff4d1c;
+  --color-cheese: #ffd23f;
+  --color-basil: #2bd96b;
+  --color-void: #ff1f3d;
+
+  --font-display: var(--font-display), "Arial Black", Impact, system-ui, sans-serif;
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --shadow-brutal: 6px 6px 0 0 var(--color-paper);
+  --shadow-brutal-tomato: 6px 6px 0 0 var(--color-tomato);
+}
+
+html {
+  color-scheme: dark;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+/* Buttons respond on press, not release — matters in a loud, crowded bar. */
+.press {
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.press:active {
+  transform: translate(4px, 4px);
+  box-shadow: 2px 2px 0 0 currentColor;
+}
+
+.stripes-void {
+  background-image: repeating-linear-gradient(-45deg, var(--color-void) 0 28px, #000 28px 56px);
+}
+
+.grain {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

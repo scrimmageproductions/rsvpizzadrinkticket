@@ -1,0 +1,40 @@
+{
+  "name": "rsvpizza-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "abi": "node scripts/gen-abi.mjs",
+    "verify:voucher": "NODE_OPTIONS=--conditions=react-server tsx scripts/verify-voucher.ts"
+  },
+  "dependencies": {
+    "@privy-io/node": "^0.37.0",
+    "@privy-io/react-auth": "^3.51.0",
+    "@supabase/supabase-js": "^2.118.0",
+    "@tanstack/react-query": "^5.105.2",
+    "framer-motion": "^14.9.0",
+    "next": "16.4.4",
+    "permissionless": "^0.2.57",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "viem": "^2.56.5",
+    "wagmi": "^3.7.9",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.4",
+    "server-only": "^0.0.1",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5"
+  }
+}
