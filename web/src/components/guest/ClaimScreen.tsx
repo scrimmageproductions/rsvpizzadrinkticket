@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PinInput, type PinInputHandle } from "./PinInput";
 import { Button, ErrorNote, H1, Kicker, Pill, Shell } from "@/components/ui";
 import Link from "next/link";
 import { guestBackend, type GuestWallet } from "@/lib/backend";
@@ -39,10 +40,10 @@ export function ClaimScreen({
   const [pin, setPin] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [err, setErr] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const pinRef = useRef<PinInputHandle>(null);
 
   async function claim() {
-    if (!wallet.ready) return;
+    if (!wallet.ready || !checkedIn || phase !== "idle" || pin.length < PIN_LEN) return;
     setErr(null);
     onBusyChange?.(true);
     try {
@@ -58,7 +59,7 @@ export function ClaimScreen({
       setPin("");
       setErr(e instanceof Error ? e.message : "Something went wrong.");
       onBusyChange?.(false);
-      inputRef.current?.focus();
+      setTimeout(() => pinRef.current?.focus(), 0); // after the field re-enables
     }
   }
 
@@ -95,33 +96,14 @@ export function ClaimScreen({
                 claim();
               }}
             >
-              {/* One hidden input drives the big PIN boxes (best mobile keyboard behaviour). */}
-              <label className="relative block" onClick={() => inputRef.current?.focus()}>
-                <input
-                  ref={inputRef}
-                  value={pin}
-                  disabled={!checkedIn || phase !== "idle"}
-                  onChange={(e) => setPin(e.target.value.replace(/[^0-9a-z]/gi, "").toUpperCase().slice(0, 8))}
-                  inputMode="text"
-                  autoCapitalize="characters"
-                  autoComplete="off"
-                  aria-label="Event PIN"
-                  className="absolute inset-0 opacity-0"
-                />
-                <div className="grid grid-cols-4 gap-3">
-                  {Array.from({ length: Math.max(PIN_LEN, pin.length) }).map((_, i) => (
-                    <motion.div
-                      key={i}
-                      animate={{ scale: pin[i] ? [1, 1.08, 1] : 1 }}
-                      className={`flex aspect-square items-center justify-center border-2 font-display text-4xl ${
-                        pin[i] ? "border-tomato bg-tomato/10" : "border-line"
-                      } ${!checkedIn ? "opacity-30" : ""}`}
-                    >
-                      {pin[i] ?? ""}
-                    </motion.div>
-                  ))}
-                </div>
-              </label>
+              <PinInput
+                ref={pinRef}
+                value={pin}
+                onChange={setPin}
+                onSubmit={claim}
+                disabled={!checkedIn || phase !== "idle"}
+                minLength={PIN_LEN}
+              />
 
               <Button
                 type="submit"
