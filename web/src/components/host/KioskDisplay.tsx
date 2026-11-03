@@ -1,7 +1,6 @@
 "use client";
 
 import QRCode from "qrcode";
-import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Button, Logo } from "@/components/ui";
 import { hostBackend, type HostSettingsData } from "@/lib/backend";
@@ -103,10 +102,9 @@ export function KioskDisplay({ eventId, data }: { eventId: string; data: HostSet
 
       <div className="relative bg-white p-[2vmin] shadow-brutal-tomato" style={{ width: "min(70vh, 88vw)", aspectRatio: "1 / 1" }}>
         {showQr ? (
-          <motion.div
+          // No fade on swap: a half-transparent code can fail to scan right at the 30 s boundary.
+          <div
             key={qr.url}
-            initial={{ opacity: 0.4, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
             className="h-full w-full [&>svg]:h-full [&>svg]:w-full"
             role="img"
             data-url={qr.url}

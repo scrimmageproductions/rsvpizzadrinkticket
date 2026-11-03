@@ -24,6 +24,7 @@ export function HoldToRedeem({
   fillColor = "#0A0A0A",
   className = "",
   ariaLabel,
+  size = "xl",
 }: {
   onComplete: () => void;
   disabled?: boolean;
@@ -33,6 +34,8 @@ export function HoldToRedeem({
   fillColor?: string;
   className?: string;
   ariaLabel: string;
+  /** "xl" = full-screen bartender button; "md" = inside a modal (e.g. "Vouch ×5"). */
+  size?: "xl" | "md";
 }) {
   const progress = useMotionValue(0);
   const clip = useTransform(progress, (p) => `inset(${(1 - p) * 100}% 0 0 0)`);
@@ -87,7 +90,12 @@ export function HoldToRedeem({
 
   const content = (ink: string, hint: string) => (
     <>
-      <span className="font-display text-[18vw] uppercase leading-none tracking-tighter sm:text-8xl" style={{ color: ink }}>
+      <span
+        className={`font-display uppercase leading-none tracking-tighter ${
+          size === "xl" ? "text-[18vw] sm:text-8xl" : "whitespace-nowrap text-5xl sm:text-6xl"
+        }`}
+        style={{ color: ink }}
+      >
         {label}
       </span>
       <span className="font-mono text-sm font-bold uppercase tracking-[0.3em]" style={{ color: ink }}>

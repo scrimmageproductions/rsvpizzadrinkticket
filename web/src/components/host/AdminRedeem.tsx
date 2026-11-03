@@ -107,6 +107,7 @@ export function AdminRedeem({
             idleHint={`hold to redeem ${qty}× ${ticket?.label ?? ""}`}
             ariaLabel={`Press and hold to redeem ${qty} ${ticket?.label} for ${guest.name}`}
             className="h-56 w-full"
+            size="md"
           />
           <p className="font-mono text-[11px] uppercase leading-relaxed tracking-widest text-mute">
             Logged as an admin redemption under your staff login. Show the bartender the color screen that follows.
