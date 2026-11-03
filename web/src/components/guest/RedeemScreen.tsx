@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { Kicker, Pill } from "@/components/ui";
 import { SuccessScreen, type Verdict } from "./SuccessScreen";
 import { HoldToRedeem } from "./HoldToRedeem";
+import { SyncButton } from "./SyncButton";
+import { useThemeFreshness } from "@/hooks/useThemeFreshness";
 import { guestBackend, type GuestWallet } from "@/lib/backend";
 import { DEMO } from "@/lib/mode";
 import type { BurnState } from "@/hooks/useBurn";
@@ -30,13 +32,17 @@ export function RedeemScreen({
   remaining,
   guestName,
   wallet,
+  theme,
 }: {
   eventId: string;
   ticket: TicketType;
   remaining: number;
   guestName: string;
   wallet: GuestWallet;
+  /** cached theme — only checked for staleness; never painted before a redemption */
+  theme: ResolvedTheme | null;
 }) {
+  const { stale } = useThemeFreshness(theme);
   const router = useRouter();
   const redeem = guestBackend.useRedeem(eventId, wallet);
   const refresh = guestBackend.useRefreshMe(eventId);
@@ -93,12 +99,18 @@ export function RedeemScreen({
 
       <HoldToRedeem
         onComplete={() => fire()}
-        disabled={remaining <= 0}
-        idleHint={remaining > 0 ? "press & hold to pour" : "no tickets left"}
+        disabled={remaining <= 0 || stale}
+        idleHint={remaining <= 0 ? "no tickets left" : stale ? "offline · sync first" : "press & hold to pour"}
         ariaLabel={`Press and hold to redeem one ${ticket.label}`}
         className="mt-4 min-h-[60dvh] flex-1"
       />
 
+      {stale && (
+        <div className="mt-4 flex flex-col items-center gap-2 border-2 border-cheese p-3 text-center">
+          <p className="text-sm">No signal since tonight&apos;s color changed — the bar can&apos;t verify this screen yet.</p>
+          <SyncButton eventId={eventId} urgent />
+        </div>
+      )}
       <p className="pt-4 text-center font-mono text-[11px] uppercase tracking-widest text-mute">
         Bartender: hold until it fills. Screen must flash tonight&apos;s color, today&apos;s date and a live clock.
       </p>

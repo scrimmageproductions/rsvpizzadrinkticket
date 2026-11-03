@@ -56,6 +56,14 @@ export type HostGuest = {
   transferredOut: number;
   /** tokenId → current balance (minted + in − out − redeemed) */
   remaining: Record<string, number>;
+  /** "kiosk" for QR self check-in, else the staff email */
+  checkedInBy: string | null;
+  invitedAt: string | null;
+};
+
+export type PreArrivalResult = {
+  sent: { rsvpId: string; name: string; to: string; link: string; delivered: boolean }[];
+  skipped: { rsvpId: string; name: string; reason: string }[];
 };
 
 export type HostSettings = {
@@ -64,4 +72,6 @@ export type HostSettings = {
   themeColor: string;
   themePalette: string[];
   rotationMinutes: number;
+  /** Unmanned door: guests self check-in by scanning the rotating QR on the kiosk screen. */
+  kioskEnabled: boolean;
 };

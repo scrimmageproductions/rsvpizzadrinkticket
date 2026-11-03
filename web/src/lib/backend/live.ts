@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePrivy } from "@privy-io/react-auth";
 import { ApiError, invalidateOnchain, useApi } from "@/lib/api";
@@ -8,7 +8,7 @@ import { sendClaim } from "@/lib/aa";
 import { useSmartAccount } from "@/hooks/useSmartAccount";
 import { useBurn, useDrainBurnQueue } from "@/hooks/useBurn";
 import { useOnchainTickets } from "@/hooks/useOnchainTickets";
-import type { ClaimVoucher, HostGuest, HostSettings, PublicEvent } from "@/lib/types";
+import type { ClaimVoucher, HostGuest, HostSettings, PreArrivalResult, PublicEvent } from "@/lib/types";
 import type { ResolvedTheme } from "@/lib/theme";
 import type {
   AdminRedeemHandle,
@@ -16,6 +16,7 @@ import type {
   GuestWallet,
   HostBackend,
   HostSettingsData,
+  InviteInfo,
   MeResponse,
   RedeemOutcome,
   TransferInput,
@@ -105,6 +106,66 @@ export const liveGuest: GuestBackend = {
   useRefreshMe(eventId) {
     const qc = useQueryClient();
     return useCallback(() => qc.invalidateQueries({ queryKey: ["me", eventId] }), [qc, eventId]);
+  },
+
+  /**
+   * "↻ Sync connection" — for guests who lost signal and come back on Wi-Fi with an expired
+   * theme. Forces a hard refetch of /me (and on-chain reads); `syncing` stays true until it lands.
+   * Tracked separately from the background 4 s poll so the spinner only shows for the manual sync.
+   */
+  useSync(eventId) {
+    const qc = useQueryClient();
+    const [syncing, setSyncing] = useState(false);
+    const sync = useCallback(() => {
+      setSyncing(true);
+      const started = Date.now();
+      invalidateOnchain(qc);
+      qc.invalidateQueries({ queryKey: ["me", eventId] }, { throwOnError: false })
+        // keep the feedback on screen long enough to read, even on fast Wi-Fi
+        .finally(() => setTimeout(() => setSyncing(false), Math.max(0, 600 - (Date.now() - started))));
+    }, [qc, eventId]);
+    return { sync, syncing };
+  },
+
+  useDoor(eventId) {
+    const api = useApi();
+    const qc = useQueryClient();
+    const kioskPresence = useCallback(
+      async (code: string) => {
+        // Deliberately unauthenticated: the guest may not be logged in yet.
+        const res = await fetch(`/api/events/${eventId}/kiosk-checkin`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.presence) throw new Error(body.message ?? "That door code didn't work. Scan the screen again.");
+        return body.presence as string;
+      },
+      [eventId],
+    );
+    const kioskCheckin = useCallback(
+      async (presence: string) => {
+        try {
+          const r = await api<{ name: string }>(`/api/events/${eventId}/kiosk-checkin`, { json: { presence } });
+          await qc.invalidateQueries({ queryKey: ["me", eventId] });
+          return r;
+        } catch (e) {
+          throw new Error(e instanceof ApiError ? e.message : "Couldn't check you in — see the door staff.");
+        }
+      },
+      [api, qc, eventId],
+    );
+    const resolveInvite = useCallback(
+      async (token: string): Promise<InviteInfo> => {
+        const res = await fetch(`/api/events/${eventId}/invite?token=${encodeURIComponent(token)}`);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.message ?? "This invite link is invalid or expired.");
+        return { name: body.name, email: body.email, phone: body.phone, loggedIn: false };
+      },
+      [eventId],
+    );
+    return { kioskPresence, kioskCheckin, resolveInvite };
   },
 
   /**
@@ -201,6 +262,23 @@ export const liveHost: HostBackend = {
     return { data: q.data?.guests, isLoading: q.isLoading };
   },
 
+  useKioskCode(eventId, enabled) {
+    const { authenticated } = usePrivy();
+    const api = useApi();
+    const q = useQuery({
+      queryKey: ["kiosk", eventId],
+      queryFn: () => api<{ code: string; expiresAt: number }>(`/api/host/${eventId}/kiosk`),
+      enabled: authenticated && enabled,
+      retry: false,
+      // Fetch the next code right as the current one rotates.
+      refetchInterval: (q) => {
+        const until = q.state.data?.expiresAt;
+        return until ? Math.max(1000, Math.min(5000, until - Date.now() + 300)) : 3000;
+      },
+    });
+    return { data: enabled ? q.data : undefined, error: q.error?.message };
+  },
+
   useHostActions(eventId) {
     const api = useApi();
     const qc = useQueryClient();
@@ -237,11 +315,11 @@ export const liveHost: HostBackend = {
      * ADMIN_ROLE burn as a sponsored UserOp in the background. We poll for the tx hash.
      */
     const adminRedeem = useCallback(
-      (rsvpId: string, tokenId: number): AdminRedeemHandle => {
+      (rsvpId: string, tokenId: number, amount: number): AdminRedeemHandle => {
         const redemptionId = crypto.randomUUID();
         const outcome: Promise<RedeemOutcome> = api<{ theme: ResolvedTheme }>(
           `/api/host/${eventId}/guests/${rsvpId}/redeem`,
-          { json: { redemptionId, tokenId } },
+          { json: { redemptionId, tokenId, amount } },
         ).then(
           (r) => {
             qc.invalidateQueries({ queryKey: ["host-guests", eventId] });
@@ -288,6 +366,16 @@ export const liveHost: HostBackend = {
       [api, qc, eventId],
     );
 
-    return { setCheckedIn, saveSettings, adminRedeem, transfer };
+    const sendPreArrivalLinks = useCallback(async () => {
+      try {
+        return await api<PreArrivalResult>(`/api/host/${eventId}/magic-links`, { method: "POST", json: {} });
+      } catch (e) {
+        throw new Error(e instanceof ApiError ? e.message : "Couldn't send links");
+      } finally {
+        qc.invalidateQueries({ queryKey: ["host-guests", eventId] });
+      }
+    }, [api, qc, eventId]);
+
+    return { setCheckedIn, saveSettings, adminRedeem, transfer, sendPreArrivalLinks };
   },
 };

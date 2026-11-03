@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { keccak256, toHex } from "viem";
 import { demoDB, fakeHash, sleep, useDemoDB, useDemoGuestSession, useDemoStaffSession, type DemoDB, type DemoGuest } from "@/lib/demo/store";
 import { useNow } from "@/hooks/useNow";
 import { resolveTheme, type ResolvedTheme } from "@/lib/theme";
-import type { GuestStatus, HostGuest, PublicEvent } from "@/lib/types";
-import type { AdminRedeemHandle, GuestBackend, HostBackend, RedeemOutcome, TransferInput } from "./types";
+import type { GuestStatus, HostGuest, PreArrivalResult, PublicEvent } from "@/lib/types";
+import { currentKioskCode, demoKioskSecret, kioskStep, PRESENCE_TTL_MS, verifyKioskCode } from "@/lib/kiosk";
+import type { AdminRedeemHandle, GuestBackend, HostBackend, InviteInfo, RedeemOutcome, TransferInput } from "./types";
 
 /**
  * Demo Mode backend: same contract as live.ts, but every "server" and "chain" step is simulated
@@ -77,7 +78,10 @@ export function demoLogin(identifier: string): string {
     demoDB.update((db) => ({
       ...db,
       guests: [
-        { id: newId, name, email, phone, status: "rsvpd", checkedInAt: null, claimedAt: null, redeemed: {}, adminRedeemed: {} },
+        {
+          id: newId, name, email, phone, status: "rsvpd", checkedInAt: null, checkedInBy: null, invitedAt: null,
+          claimedAt: null, redeemed: {}, adminRedeemed: {},
+        },
         ...db.guests,
       ],
     }));
@@ -173,6 +177,68 @@ export const demoGuest: GuestBackend = {
     return useCallback(() => {}, []);
   },
 
+  useSync() {
+    // Demo data is already local; simulate the round trip so the feedback is visible.
+    const [syncing, setSyncing] = useState(false);
+    const sync = useCallback(() => {
+      setSyncing(true);
+      sleep(700).then(() => setSyncing(false));
+    }, []);
+    return { sync, syncing };
+  },
+
+  useDoor(eventId) {
+    const session = useDemoGuestSession();
+    const kioskPresence = useCallback(
+      async (code: string) => {
+        await sleep(250);
+        // No local "kiosk enabled" check: the scanning phone may be a different device whose own
+        // demo DB never saw the host flip the switch. The rotating code is the proof.
+        if (!(await verifyKioskCode(demoKioskSecret(eventId), eventId, code))) {
+          throw new Error("That door code expired. Scan the screen at the entrance again.");
+        }
+        // Demo pass (unsigned — there is no server secret in the browser).
+        return btoa(JSON.stringify({ k: "presence", e: eventId, x: Date.now() + PRESENCE_TTL_MS }));
+      },
+      [eventId],
+    );
+    const kioskCheckin = useCallback(
+      async (presence: string) => {
+        await sleep(300);
+        let p: { k?: string; e?: string; x?: number } = {};
+        try {
+          p = JSON.parse(atob(presence));
+        } catch {
+          /* fall through */
+        }
+        if (p.k !== "presence" || p.e !== eventId || !p.x || Date.now() > p.x) {
+          throw new Error("Your door scan expired. Scan the screen at the entrance again.");
+        }
+        const g = findGuest(demoDB.get(), session);
+        if (!g) throw new Error("We couldn't find your RSVP.");
+        if (g.status !== "checked_in") {
+          demoDB.update((d) => ({
+            ...d,
+            guests: d.guests.map((x) =>
+              x.id === g.id ? { ...x, status: "checked_in", checkedInAt: new Date().toISOString(), checkedInBy: "kiosk" } : x,
+            ),
+          }));
+        }
+        return { name: g.name };
+      },
+      [eventId, session],
+    );
+    const resolveInvite = useCallback(async (token: string): Promise<InviteInfo> => {
+      await sleep(600);
+      const id = token.startsWith("demo.") ? token.slice(5) : "";
+      const g = demoDB.get().guests.find((x) => x.id === id);
+      if (!g) throw new Error("This invite link is invalid or expired.");
+      demoDB.setGuestSession(g.id); // demo: the link is the login
+      return { name: g.name, email: g.email, phone: g.phone, loggedIn: true };
+    }, []);
+    return { kioskPresence, kioskCheckin, resolveInvite };
+  },
+
   useRedeem() {
     const session = useDemoGuestSession();
     return useCallback(
@@ -239,6 +305,7 @@ export const demoHost: HostBackend = {
           themeColor: e.themeColor,
           themePalette: e.themePalette,
           rotationMinutes: e.rotationMinutes,
+          kioskEnabled: e.kioskEnabled,
         },
         theme: themeOf(db, now),
         ticketTypes: e.ticketTypes,
@@ -261,6 +328,8 @@ export const demoHost: HostBackend = {
         claimedAt: g.claimedAt,
         walletAddress: g.claimedAt ? keccak256(toHex(`wallet:${g.id}`)).slice(0, 42) : null,
         redeemed: l.redeemedByGuest + l.redeemedByAdmin,
+        checkedInBy: g.checkedInBy,
+        invitedAt: g.invitedAt,
         ...l,
       };
     });
@@ -273,7 +342,12 @@ export const demoHost: HostBackend = {
         ...d,
         guests: d.guests.map((g) =>
           g.id === rsvpId
-            ? { ...g, status: checkedIn ? "checked_in" : "rsvpd", checkedInAt: checkedIn ? new Date().toISOString() : null }
+            ? {
+                ...g,
+                status: checkedIn ? "checked_in" : "rsvpd",
+                checkedInAt: checkedIn ? new Date().toISOString() : null,
+                checkedInBy: checkedIn ? "door" : null,
+              }
             : g,
         ),
       }));
@@ -289,23 +363,24 @@ export const demoHost: HostBackend = {
           ...(p.themeColor !== undefined && { themeColor: p.themeColor as DemoDB["event"]["themeColor"] }),
           ...(p.themePalette !== undefined && { themePalette: p.themePalette as DemoDB["event"]["themePalette"] }),
           ...(p.rotationMinutes !== undefined && { rotationMinutes: p.rotationMinutes }),
+          ...(p.kioskEnabled !== undefined && { kioskEnabled: p.kioskEnabled }),
         },
       }));
     }, []);
 
     /** Host Vouch: same ledger check as a guest redemption, flagged as admin, simulated server-side burn. */
-    const adminRedeem = useCallback((rsvpId: string, tokenId: number): AdminRedeemHandle => {
+    const adminRedeem = useCallback((rsvpId: string, tokenId: number, amount: number): AdminRedeemHandle => {
       const outcome: Promise<RedeemOutcome> = sleep(120).then(() => {
         const db = demoDB.get();
         const g = db.guests.find((x) => x.id === rsvpId);
-        if (!g?.claimedAt || (ledgerOf(db, g).remaining[tokenId] ?? 0) < 1) {
+        if (!g?.claimedAt || amount < 1 || (ledgerOf(db, g).remaining[tokenId] ?? 0) < amount) {
           return { verdict: "void", code: "insufficient_balance" };
         }
         demoDB.update((d) => ({
           ...d,
           guests: d.guests.map((x) =>
             x.id === rsvpId
-              ? { ...x, adminRedeemed: { ...x.adminRedeemed, [tokenId]: (x.adminRedeemed?.[tokenId] ?? 0) + 1 } }
+              ? { ...x, adminRedeemed: { ...x.adminRedeemed, [tokenId]: (x.adminRedeemed?.[tokenId] ?? 0) + amount } }
               : x,
           ),
         }));
@@ -335,7 +410,45 @@ export const demoHost: HostBackend = {
       }));
     }, []);
 
-    return { setCheckedIn, saveSettings, adminRedeem, transfer };
+    /** Demo pre-arrival links: real-looking invite URLs, nothing is emailed. */
+    const sendPreArrivalLinks = useCallback(async (): Promise<PreArrivalResult> => {
+      await sleep(900);
+      const db = demoDB.get();
+      const res: PreArrivalResult = { sent: [], skipped: [] };
+      const now = new Date().toISOString();
+      for (const g of db.guests.filter((x) => x.status === "rsvpd" && !x.claimedAt)) {
+        if (!g.email) {
+          res.skipped.push({ rsvpId: g.id, name: g.name, reason: "no email on RSVP (phone-only)" });
+          continue;
+        }
+        const link = `${window.location.origin}/e/${db.event.id}?invite=demo.${g.id}`;
+        res.sent.push({ rsvpId: g.id, name: g.name, to: g.email, link, delivered: false });
+      }
+      const ids = new Set(res.sent.map((x) => x.rsvpId));
+      demoDB.update((d) => ({ ...d, guests: d.guests.map((g) => (ids.has(g.id) ? { ...g, invitedAt: now } : g)) }));
+      return res;
+    }, []);
+
+    return { setCheckedIn, saveSettings, adminRedeem, transfer, sendPreArrivalLinks };
+  },
+
+  /** Door screen code, computed locally from the demo event's kiosk key every 30 s step. */
+  useKioskCode(eventId, enabled) {
+    const db = useDemoDB();
+    const now = useNow(1000);
+    const secret = db?.event.kioskEnabled ? demoKioskSecret(eventId) : null;
+    const step = now === null ? null : kioskStep(now);
+    const [data, setData] = useState<{ code: string; expiresAt: number; key: string } | undefined>();
+    useEffect(() => {
+      if (!enabled || !secret || step === null) return;
+      let live = true;
+      currentKioskCode(secret, eventId).then((c) => live && setData({ ...c, key: `${secret}:${step}` }));
+      return () => {
+        live = false;
+      };
+    }, [enabled, secret, step, eventId]);
+    const fresh = data && secret && data.key === `${secret}:${step}` ? data : undefined;
+    return { data: enabled && fresh ? { code: fresh.code, expiresAt: fresh.expiresAt } : undefined };
   },
 };
 

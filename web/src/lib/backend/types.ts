@@ -1,4 +1,4 @@
-import type { GuestStatus, HostGuest, HostSettings, PublicEvent, TicketType } from "@/lib/types";
+import type { GuestStatus, HostGuest, HostSettings, PreArrivalResult, PublicEvent, TicketType } from "@/lib/types";
 import type { ResolvedTheme } from "@/lib/theme";
 import type { GuestSmartAccount } from "@/lib/aa";
 import type { BurnState } from "@/hooks/useBurn";
@@ -39,6 +39,14 @@ export type RedeemHandle = {
   burn: (onState: (s: BurnState) => void) => void;
 };
 
+export type InviteInfo = {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  /** Demo Mode logs the guest straight in from the link. Live: login is pre-filled, code auto-sent. */
+  loggedIn: boolean;
+};
+
 export interface GuestBackend {
   useSession(): { ready: boolean; authenticated: boolean; logout: () => void };
   usePublicEvent(eventId: string): PublicEvent | undefined;
@@ -55,6 +63,16 @@ export interface GuestBackend {
   useBackgroundSync(eventId: string, wallet: GuestWallet): void;
   useRedeem(eventId: string, wallet: GuestWallet): (tokenId: number, opts?: { forceConflict?: boolean }) => RedeemHandle;
   useRefreshMe(eventId: string): () => void;
+  /** Manual "↻ Sync connection": hard refetch of /me (theme + balances) with a loading state. */
+  useSync(eventId: string): { sync: () => void; syncing: boolean };
+  /** Door flows that arrive via URL params (?kiosk=…, ?invite=…). */
+  useDoor(eventId: string): {
+    /** Exchange the 30 s kiosk code for a 10-minute presence pass (works before login). */
+    kioskPresence: (code: string) => Promise<string>;
+    /** Logged in: redeem the pass → RSVP becomes checked_in. Throws Error(userMessage). */
+    kioskCheckin: (presence: string) => Promise<{ name: string }>;
+    resolveInvite: (token: string) => Promise<InviteInfo>;
+  };
 }
 
 export type HostSettingsData = {
@@ -76,10 +94,15 @@ export interface HostBackend {
   useStaffSession(): { ready: boolean; authenticated: boolean; login: () => void; logout: () => void };
   useHostSettings(eventId: string): { data?: HostSettingsData; error?: { forbidden: boolean; message: string } };
   useHostGuests(eventId: string): { data?: HostGuest[]; isLoading: boolean };
+  /** Door screen: current rotating kiosk code (polls; null when kiosk mode is off). */
+  useKioskCode(eventId: string, enabled: boolean): { data?: { code: string; expiresAt: number }; error?: string };
   useHostActions(eventId: string): {
     setCheckedIn: (rsvpId: string, checkedIn: boolean) => Promise<void>;
     saveSettings: (patch: Partial<HostSettings>) => Promise<void>;
-    adminRedeem: (rsvpId: string, tokenId: number) => AdminRedeemHandle;
+    /** Host Vouch for `amount` tickets of one type in a single gesture. */
+    adminRedeem: (rsvpId: string, tokenId: number, amount: number) => AdminRedeemHandle;
+    /** Pre-arrival links for every rsvpd + unclaimed guest. */
+    sendPreArrivalLinks: () => Promise<PreArrivalResult>;
     /** Wingman Transfer — throws Error(userMessage) if rejected. */
     transfer: (t: TransferInput) => Promise<void>;
   };

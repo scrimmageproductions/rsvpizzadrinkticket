@@ -26,6 +26,8 @@ export const GET = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/gu
       claimedAt: r.claimed_at,
       walletAddress: r.wallet_address,
       redeemed: l.redeemedByGuest + l.redeemedByAdmin,
+      checkedInBy: r.checked_in_by,
+      invitedAt: r.invited_at,
       ...l,
     };
   });

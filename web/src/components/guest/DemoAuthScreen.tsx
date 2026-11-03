@@ -5,10 +5,11 @@ import { Button, H1, Kicker, Pill, Shell } from "@/components/ui";
 import { demoLogin } from "@/lib/backend/demo";
 import { sleep } from "@/lib/demo/store";
 import type { PublicEvent } from "@/lib/types";
+import type { AuthPrefill } from "./AuthScreen";
 
 /** Demo Mode login: any email or phone, 1 s fake verification, straight to the PIN screen. */
-export function DemoAuthScreen({ event }: { event: PublicEvent | undefined }) {
-  const [value, setValue] = useState("");
+export function DemoAuthScreen({ event, prefill }: { event: PublicEvent | undefined; prefill?: AuthPrefill | null }) {
+  const [value, setValue] = useState(prefill?.identifier ?? "");
   const [busy, setBusy] = useState(false);
 
   async function go(id: string) {

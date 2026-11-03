@@ -2,6 +2,9 @@
 
 import { H1, Kicker, Pill, Shell } from "@/components/ui";
 import { TicketCard } from "./TicketCard";
+import { SyncButton } from "./SyncButton";
+import { useThemeFreshness } from "@/hooks/useThemeFreshness";
+import type { ResolvedTheme } from "@/lib/theme";
 import { guestBackend, type GuestWallet } from "@/lib/backend";
 import { DEMO } from "@/lib/mode";
 import type { PublicEvent } from "@/lib/types";
@@ -17,14 +20,18 @@ export function WalletDashboard({
   remaining,
   onchainTotal,
   wallet,
+  theme,
 }: {
   event: PublicEvent;
   guestName: string;
   remaining: Record<string, number>;
   onchainTotal: number | undefined;
   wallet: GuestWallet;
+  /** cached Visual 2FA payload — only used here to detect that it went stale */
+  theme: ResolvedTheme | null;
 }) {
   guestBackend.useBackgroundSync(event.id, wallet);
+  const { stale } = useThemeFreshness(theme);
 
   const total = Object.values(remaining).reduce((a, b) => a + b, 0);
   const synced = DEMO || (onchainTotal !== undefined && onchainTotal === total);
@@ -32,9 +39,13 @@ export function WalletDashboard({
   return (
     <Shell
       right={
-        <Pill tone={synced ? "ok" : "warn"}>
-          {DEMO ? "● demo chain" : onchainTotal === undefined ? "● loading chain" : synced ? "● on-chain" : "● syncing"}
-        </Pill>
+        stale ? (
+          <Pill tone="bad">● offline · color expired</Pill>
+        ) : (
+          <Pill tone={synced ? "ok" : "warn"}>
+            {DEMO ? "● demo chain" : onchainTotal === undefined ? "● loading chain" : synced ? "● on-chain" : "● syncing"}
+          </Pill>
+        )
       }
     >
       <div className="space-y-2 pb-6 pt-6">
@@ -52,11 +63,21 @@ export function WalletDashboard({
         ))}
       </div>
 
-      <p className="mt-auto pt-10 text-center font-mono text-[11px] uppercase leading-relaxed tracking-widest text-mute">
-        Hand your phone to the bartender.
-        <br />
-        They tap — you drink. Tickets can&apos;t be transferred.
-      </p>
+      {stale && (
+        <p className="mt-6 border-l-4 border-cheese bg-cheese/10 px-3 py-2 text-sm">
+          You lost signal, so tonight&apos;s color is out of date and the bar can&apos;t verify you. Find Wi-Fi or signal,
+          then sync.
+        </p>
+      )}
+
+      <div className="mt-auto flex flex-col items-center gap-4 pt-10">
+        <p className="text-center font-mono text-[11px] uppercase leading-relaxed tracking-widest text-mute">
+          Hand your phone to the bartender.
+          <br />
+          They hold — you drink. Tickets can&apos;t be transferred.
+        </p>
+        <SyncButton eventId={event.id} urgent={stale} />
+      </div>
     </Shell>
   );
 }

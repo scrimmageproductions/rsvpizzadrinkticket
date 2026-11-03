@@ -15,7 +15,7 @@ web/         Next.js 16 (App Router) · React 19 · Tailwind 4 · Framer Motion 
 cd web && npm i && npm run demo     # or plain `npm run dev` with no .env — Demo Mode turns on automatically
 ```
 
-Open <http://localhost:3000>. Put the guest app (`/e/pizza-night-nyc`) and the host dashboard (`/host/pizza-night-nyc`) in two tabs side by side: they share a localStorage mock DB and update each other live. Any email logs a guest in, the Event PIN is **4209**, and the yellow **Demo ▴** dock jumps between personas or resets the data.
+Open <http://localhost:3000>. To scan the door kiosk with a real phone, open the laptop by its LAN address (e.g. `http://192.168.1.20:3000`) on both devices. In Demo Mode the kiosk key is a fixed per-event value, so codes validate on any device. Put the guest app (`/e/pizza-night-nyc`) and the host dashboard (`/host/pizza-night-nyc`) in two tabs side by side: they share a localStorage mock DB and update each other live. Any email logs a guest in, the Event PIN is **4209**, and the yellow **Demo ▴** dock jumps between personas or resets the data.
 
 ---
 
@@ -30,7 +30,8 @@ Open <http://localhost:3000>. Put the guest app (`/e/pizza-night-nyc`) and the h
 | Guest | **Wallet** — "2× Free Drink, 1× Pizza Slice". | `/e/[eventId]` |
 | Bartender | **Redeem** — full-height button, **press & hold 1.5 s** (a dark pour fills it; release / slide off cancels). | `/e/[eventId]/redeem/[tokenId]` |
 | Bartender | **Success** — full-screen Theme Color of the Night, **today's date** (`TUE, NOV 3`) + live HH:MM:SS, endlessly scrolling diagonal marquee + pulse. Flips to striped **VOID** if the ledger rejects. | (overlay) |
-| Door staff | **Door list** — search + big CHECK IN toggle, live counts. | `/host/[eventId]?tab=door` |
+| Door staff | **Door list** — search + big CHECK IN toggle, live counts; marks 📱 self check-ins and ✉ invited guests. | `/host/[eventId]?tab=door` |
+| Unmanned door | **Kiosk** — guest-facing iPad/TV with a screen-filling QR that rotates every 30 s; scanning checks the guest in (Layer 1) with no staff. | `/host/[eventId]/kiosk` |
 | Host | **Guest ledger** — live balances of every checked-in guest; **Admin redeem** (Host Vouch) and **Transfer** (Wingman) for dead phones; **end-of-night CSV**. | `/host/[eventId]?tab=ledger` |
 | Host | **Settings** — Event PIN, Theme Color (manual or auto-rotate every N min, choose palette). Staff-only; `/admin` redirects here. | `/host/[eventId]?tab=settings` |
 | Bar staff | **Bar display** — staff-facing "tonight's color" + live clock + rotation countdown. | `/host/[eventId]/display` |
@@ -77,6 +78,14 @@ tap ─┬─▶ same frame   Success screen in the Theme Color already cached b
 
 The theme color is computed deterministically from `(palette, rotation_minutes, wall-clock slot)` in [`web/src/lib/theme.ts`](web/src/lib/theme.ts), so every server and the bar display agree without a cron job. It is only returned to guests who have claimed tickets.
 
+### Door & arrival
+
+- **Kiosk QR check-in.** The door screen shows `/e/<id>?kiosk=<code>`, where `code = HMAC-SHA256(event.kiosk_secret, "<eventId>:<30 s step>")` ([`lib/kiosk.ts`](web/src/lib/kiosk.ts)). A code is accepted for its own step and the one before it, so 30–60 s. On landing, the guest's phone strips the param and exchanges the code for a 10-minute signed **presence pass**, because logging in can take longer than the code lives. After login, the pass is redeemed at `POST /api/events/:id/kiosk-checkin`, which sets `status='checked_in', checked_in_by='kiosk'`. The key is regenerated every time kiosk mode is switched off → on. The Event PIN (Layer 2) is still required.
+- **Pre-arrival links.** `POST /api/host/:id/magic-links` targets every `rsvpd` + unclaimed guest with an email. It pre-creates their Privy user with a **pregenerated embedded wallet**, binds it to the RSVP, and signs an invite link (`?invite=…`, 3-day expiry). Opening the link pre-fills the login and sends the Privy code automatically. Email goes through [`lib/server/email.ts`](web/src/lib/server/email.ts) (`// TODO` provider). Privy's server SDK cannot mint a log-in-without-code link (that would need Privy custom-JWT auth), so guests type one 6-digit code, at home instead of in line.
+- **Flashbang.** The success screen opens on pure white with black text for 150 ms, timed per frame (9 frames at 60 Hz, measured 150 ms paint to paint), then hard-cuts to the theme color.
+- **↻ Sync connection.** The wallet has a manual hard refetch of `/me`. If an auto-rotating color expired while the guest had no signal, the wallet says so and the REDEEM hold is blocked until they sync. The bartender never sees last slot's color.
+- **Batch Host Vouch.** A − n + stepper, capped at the guest's balance for that perk. One hold redeems n tickets, and the success screen shows `n× Free Drink`.
+
 ### Admin override (dead phone / no signal)
 
 | Action | Ledger | Chain |
@@ -105,6 +114,7 @@ On when `NEXT_PUBLIC_DEMO_MODE=true` or `NEXT_PUBLIC_PRIVY_APP_ID` is empty. The
 | Someone else burning your tickets | `redeemTicket` requires `msg.sender == account`. |
 | Screenshot / screen-recording of an old success screen | Live ticking clock, today's date (defeats last week's recording), a marquee that never stops moving (a paused video freezes), and color rotation. |
 | Guest burning a ticket by bumping their phone in line | 1.5 s press-and-hold. Moving the finger 40 px, releasing, or scrolling cancels it. |
+| Photo of the kiosk QR texted to a friend at home | The code rotates every 30 s and dies within 60 s. The friend would also need the Event PIN from the sign inside (Layer 2). A pass already obtained lives only in that tab's sessionStorage for 10 min. |
 | Guest learning tonight's color in advance | The color picker, preview and bar display exist only behind staff login. The REDEEM button is always brand tomato, never the theme color. |
 | Admin key compromise | `ADMIN_ROLE` is separate from deployer/signer roles, only used server-side after a staff login, every action logged with the staff email; revocable; `pause()` stops it. |
 | Look-alike page built by someone without tickets | Needs tonight's color, which is only served to claimed ticket holders, and rotates. |
@@ -129,7 +139,7 @@ Deploy to Fuji (see [`contracts/README.md`](contracts/README.md)) with `SIGNER_A
 
 ### 2. Supabase
 
-Run [`web/supabase/migrations/0001_init.sql`](web/supabase/migrations/0001_init.sql) and [`0002_admin_override.sql`](web/supabase/migrations/0002_admin_override.sql), then [`web/supabase/seed.sql`](web/supabase/seed.sql) (edit the seed emails to your own). In production the `rsvps` table is filled from rsv.pizza's RSVP list. Emails must be stored lower-case and phones as E.164.
+Run [`web/supabase/migrations/0001_init.sql`](web/supabase/migrations/0001_init.sql), [`0002_admin_override.sql`](web/supabase/migrations/0002_admin_override.sql) and [`0003_kiosk_and_invites.sql`](web/supabase/migrations/0003_kiosk_and_invites.sql), then [`web/supabase/seed.sql`](web/supabase/seed.sql) (edit the seed emails to your own). In production the `rsvps` table is filled from rsv.pizza's RSVP list. Emails must be stored lower-case and phones as E.164.
 
 ### 3. Privy
 

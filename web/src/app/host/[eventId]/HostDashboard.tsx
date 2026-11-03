@@ -39,6 +39,9 @@ export function HostDashboard({ eventId }: { eventId: string }) {
             </div>
             <div className="flex items-center gap-2">
               <span className="inline-block h-6 w-6 border-2 border-paper" style={{ backgroundColor: data.theme.hex }} title="Tonight's color (staff only)" />
+              <Link href={`/host/${eventId}/kiosk`} target="_blank" className="border-2 border-paper px-3 py-2 font-mono text-xs uppercase">
+                Door kiosk ↗
+              </Link>
               <Link href={`/host/${eventId}/display`} target="_blank" className="border-2 border-paper px-3 py-2 font-mono text-xs uppercase">
                 Bar display ↗
               </Link>

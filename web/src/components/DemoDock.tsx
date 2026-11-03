@@ -9,6 +9,7 @@ import { DEMO_EVENT_ID } from "@/lib/mode";
 const PANELS = [
   ["Guest phone", `/e/${DEMO_EVENT_ID}`],
   ["Door staff", `/host/${DEMO_EVENT_ID}?tab=door`],
+  ["Door kiosk (QR)", `/host/${DEMO_EVENT_ID}/kiosk`],
   ["Host ledger", `/host/${DEMO_EVENT_ID}?tab=ledger`],
   ["Host settings", `/host/${DEMO_EVENT_ID}?tab=settings`],
   ["Bar display", `/host/${DEMO_EVENT_ID}/display`],
@@ -22,7 +23,7 @@ const PANELS = [
 export function DemoDock() {
   const path = usePathname();
   const [open, setOpen] = useState(false);
-  if (path.includes("/redeem/") || path.endsWith("/display")) return null;
+  if (path.includes("/redeem/") || path.endsWith("/display") || path.endsWith("/kiosk")) return null;
 
   return (
     <div className="fixed bottom-3 right-3 z-30 flex flex-col items-end gap-2 font-mono text-[11px] uppercase">

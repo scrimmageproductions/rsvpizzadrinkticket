@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LiveClock } from "./LiveClock";
 import { explorerTx } from "@/lib/chain";
 import type { ResolvedTheme } from "@/lib/theme";
@@ -13,6 +13,9 @@ const jitter = (n: number) => {
   const x = Math.sin(n * 12.9898) * 43758.5453;
   return x - Math.floor(x);
 };
+
+/** "Flashbang": blinding white for exactly this long, then a hard cut to the theme color. */
+export const FLASH_MS = 150;
 
 export type Verdict = "pending" | "ok" | "void" | "offline";
 
@@ -43,6 +46,31 @@ export function SuccessScreen({
   /** e.g. "Host vouch" — shown when staff redeem on a guest's behalf. */
   badge?: string;
 }) {
+  // Guests run dim screens in dark bars. A full-white frame snaps the bartender's eyes to the
+  // phone and maxes out perceived brightness; then a HARD cut (no fade) to tonight's color.
+  // Text is solid black during the flash, then the theme's computed contrast ink.
+  const [flash, setFlash] = useState(true);
+  useEffect(() => {
+    // Frame-aligned: count from the first white frame, and request the cut ONE frame early —
+    // a state change made inside a frame callback only paints on the following frame. The frame
+    // length is measured, so this lands on ≈150 ms at 60 Hz (9 frames) and 120 Hz (18 frames).
+    // (A plain setTimeout(150) measured ~167–190 ms paint-to-paint.)
+    let raf = 0;
+    let start = 0;
+    let prev = 0;
+    const tick = (t: number) => {
+      if (!start) start = prev = t;
+      const frame = t - prev > 0 ? t - prev : 1000 / 60;
+      prev = t;
+      if (t - start + frame >= FLASH_MS - frame / 2) setFlash(false);
+      else raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const bg = flash ? "#FFFFFF" : theme.hex;
+  const ink = flash ? "#000000" : theme.ink;
+
   const burst = useMemo(
     () =>
       Array.from({ length: 14 }, (_, i) => {
@@ -56,10 +84,9 @@ export function SuccessScreen({
   return (
     <motion.div
       className="fixed inset-0 z-50 flex flex-col overflow-hidden"
-      style={{ backgroundColor: theme.hex, color: theme.ink }}
-      initial={{ clipPath: "circle(0% at 50% 70%)" }}
-      animate={{ clipPath: "circle(150% at 50% 70%)" }}
-      transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
+      // Plain style (no transition / no animate on color): white → theme is a single-frame cut.
+      style={{ backgroundColor: bg, color: ink }}
+      data-flash={flash ? "white" : "theme"}
       role="status"
     >
       {/* Continuous motion: diagonal marquee rows scrolling in opposite directions, forever.
@@ -69,7 +96,7 @@ export function SuccessScreen({
           <motion.div
             key={row}
             className="flex w-max whitespace-nowrap font-display text-6xl uppercase leading-none"
-            style={{ color: theme.ink }}
+            style={{ color: ink }}
             animate={{ x: row % 2 ? ["-50%", "0%"] : ["0%", "-50%"] }}
             transition={{ repeat: Infinity, ease: "linear", duration: 9 + (row % 3) * 2 }}
           >
@@ -86,7 +113,7 @@ export function SuccessScreen({
       <motion.span
         aria-hidden
         className="pointer-events-none absolute left-1/2 top-[34%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full border-[10px]"
-        style={{ borderColor: theme.ink }}
+        style={{ borderColor: ink }}
         animate={{ scale: [0.6, 2.4], opacity: [0.35, 0] }}
         transition={{ repeat: Infinity, duration: 1.4, ease: "easeOut" }}
       />
@@ -97,7 +124,7 @@ export function SuccessScreen({
           key={delay}
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-[38%] h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full border-[6px]"
-          style={{ borderColor: theme.ink }}
+          style={{ borderColor: ink }}
           initial={{ scale: 0.2, opacity: 0.8 }}
           animate={{ scale: 6, opacity: 0 }}
           transition={{ duration: 1.1, delay, ease: "easeOut" }}
@@ -123,23 +150,23 @@ export function SuccessScreen({
           <span className="flex items-center gap-2">
             rsv.pizza
             {badge && (
-              <span className="px-2 py-0.5" style={{ backgroundColor: theme.ink, color: theme.hex }}>
+              <span className="px-2 py-0.5" style={{ backgroundColor: ink, color: bg }}>
                 {badge}
               </span>
             )}
           </span>
-          <button onClick={onDone} className="border-2 px-3 py-1" style={{ borderColor: theme.ink }}>
+          <button onClick={onDone} className="border-2 px-3 py-1" style={{ borderColor: ink }}>
             Done
           </button>
         </div>
 
         <div className="flex flex-col items-center gap-3">
           <motion.svg viewBox="0 0 100 100" className="h-20 w-20" initial={{ scale: 0.3, rotate: -20 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 300, damping: 12 }}>
-            <circle cx="50" cy="50" r="46" fill="none" stroke={theme.ink} strokeWidth="8" />
+            <circle cx="50" cy="50" r="46" fill="none" stroke={ink} strokeWidth="8" />
             <motion.path
               d="M28 52 L44 67 L73 35"
               fill="none"
-              stroke={theme.ink}
+              stroke={ink}
               strokeWidth="10"
               strokeLinecap="square"
               initial={{ pathLength: 0 }}
@@ -170,7 +197,7 @@ export function SuccessScreen({
         <div className="flex w-full flex-col items-center gap-4">
           {/* Date defeats recordings from previous nights; ticking seconds defeat screenshots. */}
           <LiveClock showDate className="text-[17vw] sm:text-7xl" dateClassName="text-[9vw] sm:text-4xl" />
-          <div className="w-full border-[3px] px-4 py-2" style={{ borderColor: theme.ink }}>
+          <div className="w-full border-[3px] px-4 py-2" style={{ borderColor: ink }}>
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.3em] opacity-70">Tonight&apos;s color</p>
             <p className="font-display text-2xl uppercase">{theme.name}</p>
           </div>

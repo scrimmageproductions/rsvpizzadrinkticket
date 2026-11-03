@@ -17,6 +17,7 @@ export function Redeem({ eventId, tokenId }: { eventId: string; tokenId: number 
             remaining={me.status.remaining[tokenId] ?? 0}
             guestName={me.status.name}
             wallet={wallet}
+            theme={me.theme}
           />
         );
       }}

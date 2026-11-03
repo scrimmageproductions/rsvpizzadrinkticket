@@ -7,10 +7,15 @@ import { db, type RsvpRow } from "@/lib/server/supabase";
 import { adminRedeemOnChain } from "@/lib/server/adminAccount";
 import { resolveTheme } from "@/lib/theme";
 
-const Body = z.object({ redemptionId: z.string().uuid(), tokenId: z.number().int().nonnegative() });
+const Body = z.object({
+  redemptionId: z.string().uuid(),
+  tokenId: z.number().int().nonnegative(),
+  /** Batch vouch (e.g. a VIP's whole round). The ledger rejects anything above the balance. */
+  amount: z.number().int().positive().max(50).default(1),
+});
 
 /**
- * HOST VOUCH — guest's phone is dead. The host redeems on their behalf:
+ * HOST VOUCH — guest's phone is dead. The host redeems `amount` tickets on their behalf:
  *   1. same atomic ledger check as a guest redemption (source = 'admin', who = staff email)
  *   2. respond immediately with the theme → host's device shows the Visual 2FA success screen
  *   3. after the response: gasless ADMIN_ROLE `adminRedeem` UserOp burns the guest's token
@@ -32,7 +37,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/g
     p_event_id: eventId,
     p_rsvp_id: rsvp.id,
     p_token_id: body.tokenId,
-    p_amount: 1,
+    p_amount: body.amount,
     p_theme_color: theme.key,
     p_source: "admin",
     p_redeemed_by: staff.emails[0] ?? staff.userId,
@@ -46,7 +51,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/g
   const wallet = rsvp.wallet_address as `0x${string}`;
   after(async () => {
     try {
-      const { txHash } = await adminRedeemOnChain(wallet, body.tokenId, 1, async (userOpHash) => {
+      const { txHash } = await adminRedeemOnChain(wallet, body.tokenId, body.amount, async (userOpHash) => {
         await db().from("redemptions").update({ user_op_hash: userOpHash }).eq("id", body.redemptionId);
       });
       await db().from("redemptions").update({ tx_hash: txHash }).eq("id", body.redemptionId);

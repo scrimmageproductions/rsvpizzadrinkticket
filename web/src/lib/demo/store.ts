@@ -18,6 +18,9 @@ export type DemoGuest = {
   phone: string | null;
   status: "rsvpd" | "checked_in";
   checkedInAt: string | null;
+  /** "door" (staff toggle) | "kiosk" (QR self check-in) */
+  checkedInBy: string | null;
+  invitedAt: string | null;
   claimedAt: string | null;
   /** tokenId → number redeemed by the guest at the bar */
   redeemed: Record<string, number>;
@@ -38,22 +41,25 @@ export type DemoEvent = {
   themePalette: ThemeKey[];
   rotationMinutes: number;
   ticketTypes: TicketType[];
+  /** Door QR on/off. The demo key itself is fixed per event (see demoKioskSecret). */
+  kioskEnabled: boolean;
 };
 
-export type DemoDB = { version: 2; event: DemoEvent; guests: DemoGuest[]; transfers: DemoTransfer[] };
+export type DemoDB = { version: 3; event: DemoEvent; guests: DemoGuest[]; transfers: DemoTransfer[] };
 
 const DB_KEY = "rsvpizza:demo:db";
 const GUEST_KEY = "rsvpizza:demo:guest-session";
 const STAFF_KEY = "rsvpizza:demo:staff-session";
 
 const guest = (id: string, name: string, email: string | null, phone: string | null, over: Partial<DemoGuest> = {}): DemoGuest => ({
-  id, name, email, phone, status: "rsvpd", checkedInAt: null, claimedAt: null, redeemed: {}, adminRedeemed: {}, ...over,
+  id, name, email, phone, status: "rsvpd", checkedInAt: null, checkedInBy: null, invitedAt: null,
+  claimedAt: null, redeemed: {}, adminRedeemed: {}, ...over,
 });
 
 export function seed(): DemoDB {
   const t = new Date().toISOString();
   return {
-    version: 2,
+    version: 3,
     event: {
       id: DEMO_EVENT_ID,
       name: "Global Pizza Party — NYC",
@@ -68,19 +74,20 @@ export function seed(): DemoDB {
         { tokenId: 1, label: "Free Drink", emoji: "🍺", amount: 2 },
         { tokenId: 2, label: "Pizza Slice", emoji: "🍕", amount: 1 },
       ],
+      kioskEnabled: false,
     },
     guests: [
       guest("g1", "Ada Lovelace", "ada@example.com", null),
       guest("g2", "Satoshi Slice", "satoshi@example.com", null),
       guest("g3", "Margherita Quattro", null, "+15555550123"),
-      guest("g4", "Pepper Roni", "pepper@example.com", null, { status: "checked_in", checkedInAt: t }),
+      guest("g4", "Pepper Roni", "pepper@example.com", null, { status: "checked_in", checkedInAt: t, checkedInBy: "door" }),
       guest("g5", "Cal Zone", "cal@example.com", null, {
-        status: "checked_in", checkedInAt: t, claimedAt: t, redeemed: { "1": 1 },
+        status: "checked_in", checkedInAt: t, checkedInBy: "door", claimedAt: t, redeemed: { "1": 1 },
       }),
       guest("g6", "Burrata Bell", "burrata@example.com", null),
       guest("g7", "Anchovy Andy", null, "+15555550188"),
       guest("g8", "Basil Hayden", "basil@example.com", null, {
-        status: "checked_in", checkedInAt: t, claimedAt: t,
+        status: "checked_in", checkedInAt: t, checkedInBy: "door", claimedAt: t,
       }),
     ],
     transfers: [],
@@ -136,7 +143,7 @@ const SEED = { current: null as DemoDB | null };
 const getDB = () => {
   const db = readKey<DemoDB>(DB_KEY, () => (SEED.current ??= seed()));
   // Older demo data shape → start fresh.
-  return db?.version === 2 ? db : (SEED.current ??= seed());
+  return db?.version === 3 ? db : (SEED.current ??= seed());
 };
 
 /** null during SSR / prerender → callers render a loading state. */

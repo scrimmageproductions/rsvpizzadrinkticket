@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Modal } from "./Modal";
+import { Stepper } from "./Stepper";
 import { Button, ErrorNote } from "@/components/ui";
 import { hostBackend } from "@/lib/backend";
 import type { HostGuest, TicketType } from "@/lib/types";
@@ -91,18 +92,7 @@ export function WingmanTransfer({
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <p className="font-mono text-xs uppercase tracking-widest text-mute">Amount</p>
-            <div className="flex items-center border-2 border-paper">
-              <button className="px-4 py-2 font-display text-xl" onClick={() => setAmount((a) => Math.max(1, a - 1))} aria-label="Less">
-                −
-              </button>
-              <span className="w-12 text-center font-display text-2xl tabular-nums">{Math.min(amount, max)}</span>
-              <button className="px-4 py-2 font-display text-xl" onClick={() => setAmount((a) => Math.min(max, a + 1))} aria-label="More">
-                +
-              </button>
-            </div>
-          </div>
+          <Stepper value={amount} onChange={setAmount} max={max} />
 
           <div>
             <p className="mb-2 font-mono text-xs uppercase tracking-widest text-mute">To (checked-in guest)</p>

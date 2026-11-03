@@ -1,18 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLoginWithEmail, useLoginWithOAuth, useLoginWithSms } from "@privy-io/react-auth";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button, ErrorNote, H1, Kicker, Shell } from "@/components/ui";
 import type { PublicEvent } from "@/lib/types";
+import type { AuthPrefill } from "./AuthScreen";
 
 /**
  * 1. AUTH — plain Web2 login. Privy silently provisions a non-custodial embedded wallet;
  *    the guest never sees a seed phrase, an address, or a gas fee.
  */
-export function PrivyAuthScreen({ event }: { event: PublicEvent | undefined }) {
-  const [mode, setMode] = useState<"email" | "phone">("email");
-  const [value, setValue] = useState("");
+export function PrivyAuthScreen({ event, prefill }: { event: PublicEvent | undefined; prefill?: AuthPrefill | null }) {
+  const [mode, setMode] = useState<"email" | "phone">(prefill?.kind ?? "email");
+  const [value, setValue] = useState(prefill?.identifier ?? "");
+  // A pre-arrival link can resolve after first render: adopt it once (render-phase adjustment).
+  const [adopted, setAdopted] = useState<AuthPrefill | null | undefined>(prefill);
+  if (prefill && prefill !== adopted) {
+    setAdopted(prefill);
+    setMode(prefill.kind);
+    setValue(prefill.identifier);
+  }
   const [code, setCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -24,12 +32,14 @@ export function PrivyAuthScreen({ event }: { event: PublicEvent | undefined }) {
   const flow = mode === "email" ? email : sms;
   const awaitingCode = flow.state.status === "awaiting-code-input" || flow.state.status === "submitting-code";
 
-  async function send() {
+  async function send(override?: { kind: "email" | "phone"; identifier: string }) {
+    const kind = override?.kind ?? mode;
+    const id = (override?.identifier ?? value).trim();
     setErr(null);
     setBusy(true);
     try {
-      if (mode === "email") await email.sendCode({ email: value.trim() });
-      else await sms.sendCode({ phoneNumber: value.trim() });
+      if (kind === "email") await email.sendCode({ email: id });
+      else await sms.sendCode({ phoneNumber: id });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't send code");
     } finally {
@@ -49,6 +59,15 @@ export function PrivyAuthScreen({ event }: { event: PublicEvent | undefined }) {
     }
   }
 
+  // Pre-arrival link: fire the one-time code automatically (once per link).
+  const autoSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!prefill?.autoSend || autoSent.current === prefill.identifier) return;
+    autoSent.current = prefill.identifier;
+    void send({ kind: prefill.kind, identifier: prefill.identifier });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
+
   return (
     <Shell>
       <div className="flex flex-1 flex-col justify-between gap-10 pt-6">
@@ -56,7 +75,9 @@ export function PrivyAuthScreen({ event }: { event: PublicEvent | undefined }) {
           <Kicker>{event?.venue ?? "You're on the list"}</Kicker>
           <H1>{event?.name ?? "Pizza Party"}</H1>
           <p className="max-w-xs text-mute">
-            Log in with the email or phone you RSVP&apos;d with. Your drink tickets live here — no app, no crypto stuff.
+            {prefill?.name
+              ? `Hey ${prefill.name.split(" ")[0]} — we just sent a code to ${prefill.identifier}. Enter it to set up your tickets before you arrive.`
+              : "Log in with the email or phone you RSVP'd with. Your drink tickets live here — no app, no crypto stuff."}
           </p>
         </div>
 
@@ -71,7 +92,7 @@ export function PrivyAuthScreen({ event }: { event: PublicEvent | undefined }) {
                 className="space-y-3"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  send();
+                  void send();
                 }}
               >
                 <div className="grid grid-cols-2 border-2 border-line font-mono text-xs uppercase tracking-widest">

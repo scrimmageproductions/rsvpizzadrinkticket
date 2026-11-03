@@ -68,6 +68,8 @@ export function GuestList({ eventId }: { eventId: string }) {
                 <p className="truncate text-xl font-bold">{g.name}</p>
                 <p className="truncate font-mono text-xs text-mute">
                   {g.email ?? g.phone ?? "—"}
+                  {g.status === "checked_in" && g.checkedInBy === "kiosk" && " · 📱 self check-in"}
+                  {g.invitedAt && !g.claimedAt && " · ✉ link sent"}
                   {g.claimedAt && " · 🎟 claimed"}
                   {g.redeemed > 0 && ` · ${g.redeemed} redeemed`}
                 </p>

@@ -25,6 +25,8 @@ export type EventRow = {
   theme_palette: string[];
   rotation_minutes: number;
   ticket_types: { tokenId: number; label: string; emoji: string; amount: number }[];
+  kiosk_enabled: boolean;
+  kiosk_secret: string | null;
 };
 
 export type RsvpRow = {
@@ -41,4 +43,6 @@ export type RsvpRow = {
   claim_id: string | null;
   claimed_at: string | null;
   pin_failures: number;
+  invited_at: string | null;
+  invite_count: number;
 };
