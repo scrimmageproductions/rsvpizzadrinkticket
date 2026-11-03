@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { handler, json } from "@/lib/server/http";
-import { requireHost } from "@/lib/server/auth";
+import { HttpError, requireHost } from "@/lib/server/auth";
+import { ticketChangeError, TicketTypesSchema } from "@/lib/tickets";
 import { loadEvent } from "@/lib/server/guests";
 import { db } from "@/lib/server/supabase";
 import { isThemeKey, resolveTheme } from "@/lib/theme";
@@ -14,6 +15,8 @@ const Patch = z.object({
   themePalette: z.array(z.string().refine(isThemeKey, "unknown color")).min(2).optional(),
   rotationMinutes: z.number().int().min(1).max(240).optional(),
   kioskEnabled: z.boolean().optional(),
+  eventBudget: z.number().int().min(0).max(1_000_000).nullable().optional(),
+  ticketTypes: TicketTypesSchema.optional(),
 });
 
 export const GET = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/settings">) => {
@@ -27,6 +30,7 @@ export const GET = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/se
     themePalette: e.theme_palette,
     rotationMinutes: e.rotation_minutes,
     kioskEnabled: e.kiosk_enabled,
+    eventBudget: e.event_budget,
   };
   return json({ eventName: e.name, settings, theme: resolveTheme(e), ticketTypes: e.ticket_types, serverTime: Date.now() });
 });
@@ -52,7 +56,30 @@ export const PATCH = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/
     }
   }
 
+  if (p.eventBudget !== undefined) update.event_budget = p.eventBudget;
+  if (p.ticketTypes !== undefined) {
+    const current = await loadEvent(eventId);
+    const err = ticketChangeError(current.ticket_types, p.ticketTypes, await tokensInUse(eventId));
+    if (err) throw new HttpError(409, "ticket_in_use", err);
+    // Only affects claims made from now on — each guest's bundle is snapshotted at claim.
+    update.ticket_types = p.ticketTypes;
+  }
+
   const { error } = await db().from("events").update(update).eq("id", eventId);
   if (error) throw error;
   return json({ theme: resolveTheme(await loadEvent(eventId)) });
 });
+
+/** Token ids any guest holds or has held: claimed bundles, grants, transfers. */
+async function tokensInUse(eventId: string): Promise<Set<number>> {
+  const [r, g, t] = await Promise.all([
+    db().from("rsvps").select("claimed_bundle").eq("event_id", eventId).not("claimed_at", "is", null),
+    db().from("grants").select("token_id").eq("event_id", eventId),
+    db().from("transfers").select("token_id").eq("event_id", eventId),
+  ]);
+  for (const x of [r, g, t]) if (x.error) throw x.error;
+  const used = new Set<number>();
+  for (const row of r.data ?? []) for (const b of (row.claimed_bundle ?? []) as { tokenId: number; amount: number }[]) if (b.amount > 0) used.add(Number(b.tokenId));
+  for (const row of [...(g.data ?? []), ...(t.data ?? [])]) used.add(Number(row.token_id));
+  return used;
+}

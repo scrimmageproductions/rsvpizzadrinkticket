@@ -3,6 +3,8 @@
 import { H1, Kicker, Pill, Shell } from "@/components/ui";
 import { TicketCard } from "./TicketCard";
 import { SyncButton } from "./SyncButton";
+import { RecentRedemptions } from "./RecentRedemptions";
+import type { RecentRedemption } from "@/lib/types";
 import { useThemeFreshness } from "@/hooks/useThemeFreshness";
 import type { ThemeWindow } from "@/hooks/useThemeFreshness";
 import { guestBackend, type GuestWallet } from "@/lib/backend";
@@ -21,6 +23,7 @@ export function WalletDashboard({
   onchainTotal,
   wallet,
   theme,
+  recent,
 }: {
   event: PublicEvent;
   guestName: string;
@@ -29,6 +32,7 @@ export function WalletDashboard({
   wallet: GuestWallet;
   /** cached Visual 2FA payload (current + next slot, clock offset) — only used to detect staleness */
   theme: ThemeWindow;
+  recent: RecentRedemption[];
 }) {
   guestBackend.useBackgroundSync(event.id, wallet);
   const { stale } = useThemeFreshness(theme);
@@ -58,10 +62,13 @@ export function WalletDashboard({
       </div>
 
       <div className="space-y-4">
-        {event.ticketTypes.map((t, i) => (
+        {/* Check-in types always show (incl. "all used"); extra types (e.g. granted merch) only while held. */}
+        {event.ticketTypes.filter((t) => t.amount > 0 || (remaining[t.tokenId] ?? 0) > 0).map((t, i) => (
           <TicketCard key={t.tokenId} eventId={event.id} t={t} remaining={remaining[t.tokenId] ?? 0} index={i} />
         ))}
       </div>
+
+      <RecentRedemptions items={recent} ticketTypes={event.ticketTypes} clockOffset={theme.clockOffset} />
 
       {stale && (
         <p className="mt-6 border-l-4 border-cheese bg-cheese/10 px-3 py-2 text-sm">

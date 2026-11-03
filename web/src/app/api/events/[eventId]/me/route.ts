@@ -1,6 +1,6 @@
 import { handler, json } from "@/lib/server/http";
 import { requireUser } from "@/lib/server/auth";
-import { findRsvp, guestStatus, loadEvent, toPublicEvent } from "@/lib/server/guests";
+import { findRsvp, guestStatus, loadEvent, recentRedemptions, toPublicEvent } from "@/lib/server/guests";
 import { nextTheme, resolveTheme } from "@/lib/theme";
 
 /**
@@ -23,6 +23,8 @@ export const GET = handler(async (req, ctx: RouteContext<"/api/events/[eventId]/
     status,
     theme,
     themeNext: theme ? nextTheme(event, theme) : null,
+    // Safety net if the success screen auto-closed while the bartender looked away.
+    recentRedemptions: rsvp?.claimed_at ? await recentRedemptions(rsvp.id) : [],
     serverTime: Date.now(),
   });
 });

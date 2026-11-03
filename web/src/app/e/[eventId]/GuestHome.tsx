@@ -56,6 +56,7 @@ function Home({ me, wallet }: GuestCtx) {
       onchainTotal={mint.onchainTotal}
       wallet={wallet}
       theme={me}
+      recent={me.recentRedemptions}
     />
   );
 }

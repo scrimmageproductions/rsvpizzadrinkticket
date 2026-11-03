@@ -346,4 +346,57 @@ contract RsvpTicketsTest is Test {
         tickets.adminRedeem(guest, DRINK, 1);
         vm.stopPrank();
     }
+
+    // ───────────────────────── admin mint ("Make It Right")
+
+    function test_adminMint_grantsExtraTickets() public {
+        _claimBundle();
+        vm.prank(admin);
+        tickets.adminMint(guest, DRINK, 3);
+        assertEq(tickets.balanceOf(guest, DRINK), 5);
+    }
+
+    function test_adminMint_worksWithoutPriorClaimAndNewTokenId() public {
+        uint256 MERCH = 7;
+        vm.prank(admin);
+        tickets.adminMint(friend, MERCH, 1);
+        assertEq(tickets.balanceOf(friend, MERCH), 1);
+    }
+
+    function test_adminMint_onlyAdminRole() public {
+        bytes32 role = tickets.ADMIN_ROLE();
+        vm.prank(guest);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, guest, role));
+        tickets.adminMint(guest, DRINK, 1);
+    }
+
+    function test_adminMint_rejectsZeroAndBadRecipient() public {
+        vm.startPrank(admin);
+        vm.expectRevert(RsvpTickets.ZeroAmount.selector);
+        tickets.adminMint(guest, DRINK, 0);
+        vm.expectRevert(abi.encodeWithSelector(RsvpTickets.InvalidRecipient.selector, DEAD));
+        tickets.adminMint(DEAD, DRINK, 1);
+        vm.expectRevert(abi.encodeWithSelector(RsvpTickets.InvalidRecipient.selector, address(0)));
+        tickets.adminMint(address(0), DRINK, 1);
+        vm.stopPrank();
+    }
+
+    function test_adminMint_blockedWhenPaused() public {
+        vm.startPrank(admin);
+        tickets.pause();
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        tickets.adminMint(guest, DRINK, 1);
+        vm.stopPrank();
+    }
+
+    function test_adminMint_grantedTicketsAreStillSoulbound() public {
+        vm.prank(admin);
+        tickets.adminMint(guest, DRINK, 1);
+        vm.prank(guest);
+        vm.expectRevert(RsvpTickets.Soulbound.selector);
+        tickets.safeTransferFrom(guest, friend, DRINK, 1, "");
+        vm.prank(guest);
+        tickets.redeemTicket(guest, DRINK, 1);
+        assertEq(tickets.balanceOf(DEAD, DRINK), 1);
+    }
 }

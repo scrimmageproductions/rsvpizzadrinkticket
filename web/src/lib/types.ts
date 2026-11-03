@@ -37,6 +37,9 @@ export type ClaimVoucher = {
   signature: `0x${string}`;
 };
 
+/** A receipt the bartender can check if the success screen already auto-closed. */
+export type RecentRedemption = { id: string; tokenId: number; amount: number; at: string; byHost: boolean };
+
 export type HostGuest = {
   id: string;
   name: string;
@@ -54,7 +57,9 @@ export type HostGuest = {
   redeemedByAdmin: number;
   transferredIn: number;
   transferredOut: number;
-  /** tokenId → current balance (minted + in − out − redeemed) */
+  /** extra tickets granted by staff ("Make It Right") */
+  granted: number;
+  /** tokenId → current balance (minted + granted + in − out − redeemed) */
   remaining: Record<string, number>;
   /** "kiosk" for QR self check-in, else the staff email */
   checkedInBy: string | null;
@@ -74,4 +79,6 @@ export type HostSettings = {
   rotationMinutes: number;
   /** Unmanned door: guests self check-in by scanning the rotating QR on the kiosk screen. */
   kioskEnabled: boolean;
+  /** Max tickets the host will pay for tonight (all types, guest + admin redemptions). null = none. */
+  eventBudget: number | null;
 };

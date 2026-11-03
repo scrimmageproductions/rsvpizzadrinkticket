@@ -7,6 +7,7 @@ import { GuestList } from "@/components/host/GuestList";
 import { MasterLedger } from "@/components/host/MasterLedger";
 import { SettingsPanel } from "@/components/host/SettingsPanel";
 import { ExportReport } from "@/components/host/ExportReport";
+import { BudgetBar } from "@/components/host/BudgetBar";
 import { Logo, Pill } from "@/components/ui";
 import { hostBackend } from "@/lib/backend";
 import { DEMO } from "@/lib/mode";
@@ -28,8 +29,9 @@ export function HostDashboard({ eventId }: { eventId: string }) {
   return (
     <HostGate eventId={eventId}>
       {(data) => (
-        <div className="mx-auto w-full max-w-5xl px-5 py-6">
-          <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-paper pb-4">
+        <div className="mx-auto w-full max-w-5xl px-5 pb-6">
+          <BudgetBar eventId={eventId} budget={data.settings.eventBudget} />
+          <header className="mt-6 flex flex-wrap items-center justify-between gap-4 border-b-2 border-paper pb-4">
             <div>
               <div className="flex items-center gap-2">
                 <Logo />
@@ -66,7 +68,7 @@ export function HostDashboard({ eventId }: { eventId: string }) {
           <footer className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t-2 border-line pt-6">
             <ExportReport eventId={eventId} />
             <p className="font-mono text-[11px] uppercase tracking-widest text-mute">
-              Minted + transferred − redeemed (guest + vouch) = remaining
+              Minted + granted + transferred − redeemed (guest + vouch) = remaining
             </p>
           </footer>
         </div>

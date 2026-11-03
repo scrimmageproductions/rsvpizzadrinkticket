@@ -88,6 +88,13 @@ The theme color is computed deterministically from `(palette, rotation_minutes, 
 - **↻ Sync connection.** The wallet has a manual hard refetch of `/me`. If an auto-rotating color expired while the guest had no signal, the wallet says so and the REDEEM hold is blocked until they sync. The bartender never sees last slot's color.
 - **Batch Host Vouch.** A − n + stepper, capped at the guest's balance for that perk. One hold redeems n tickets, and the success screen shows `n× Free Drink`.
 
+### Hospitality & budget
+
+- **Event budget bar.** Pinned to the top of every host tab: `redeemed / event_budget` (guest + Host Vouch). It's green below 75 %, `#FFD23F` from 75 %, and `#FF1F3D` from 90 %. It also shows how many tickets are still unredeemed and the worst-case tab if they're all used. Set the budget in Event settings, which can suggest one (RSVPs × bundle).
+- **Make It Right (🎁 Grant tickets).** Any claimed guest can be granted 1–20 of any ticket type, with a logged reason. `POST /api/host/:id/admin-mint` calls `record_grant()` (the ledger, with staff email and reason), then a sponsored `adminMint` UserOp from the ADMIN_ROLE account. The modal shows the effect on the budget's worst case before you confirm.
+- **Ticket configuration.** Event settings edits `events.ticket_types`: emoji, name, check-in amount (0 = grant-only, e.g. 👕 Merch Item), and add or remove types. **Each claim snapshots the bundle it minted** (`rsvps.claimed_bundle`). Changing the allocation mid-event therefore only affects new claims and never creates phantom balances for guests who already claimed. A type that guests already hold can't be deleted; set its amount to 0 instead.
+- **Recent redemptions.** `/me` returns the guest's redemptions from the last 30 minutes. The wallet shows them as static receipts (`✓ 1× Pizza Slice — 2 mins ago · 10:42:07 PM`), with Host Vouches labelled, so the bartender has proof even after the success screen closes itself. No theme color is shown, since a history of colors would leak the palette.
+
 ### Admin override (dead phone / no signal)
 
 | Action | Ledger | Chain |
@@ -141,7 +148,7 @@ Deploy to Fuji (see [`contracts/README.md`](contracts/README.md)) with `SIGNER_A
 
 ### 2. Supabase
 
-Run [`web/supabase/migrations/0001_init.sql`](web/supabase/migrations/0001_init.sql), [`0002_admin_override.sql`](web/supabase/migrations/0002_admin_override.sql) and [`0003_kiosk_and_invites.sql`](web/supabase/migrations/0003_kiosk_and_invites.sql), then [`web/supabase/seed.sql`](web/supabase/seed.sql) (edit the seed emails to your own). In production the `rsvps` table is filled from rsv.pizza's RSVP list. Emails must be stored lower-case and phones as E.164.
+Run [`web/supabase/migrations/0001_init.sql`](web/supabase/migrations/0001_init.sql), [`0002_admin_override.sql`](web/supabase/migrations/0002_admin_override.sql) and [`0003_kiosk_and_invites.sql`](web/supabase/migrations/0003_kiosk_and_invites.sql) and [`0004_budget_grants_bundles.sql`](web/supabase/migrations/0004_budget_grants_bundles.sql), then [`web/supabase/seed.sql`](web/supabase/seed.sql) (edit the seed emails to your own). In production the `rsvps` table is filled from rsv.pizza's RSVP list. Emails must be stored lower-case and phones as E.164.
 
 ### 3. Privy
 
@@ -166,7 +173,7 @@ npm run dev
 ### Checks
 
 ```bash
-cd contracts && forge test                         # 29 tests: vouchers, replay, expiry, soulbound fuzz, redeem, admin override, roles, pause
+cd contracts && forge test                         # 35 tests: vouchers, replay, expiry, soulbound fuzz, redeem, admin override, roles, pause
 cd web && npm run typecheck && npm run lint && npm run build
 anvil & cd web && npm run verify:voucher           # e2e: backend-signed voucher accepted by the real contract on anvil
 ```

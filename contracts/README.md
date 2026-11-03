@@ -9,12 +9,15 @@ Soulbound, signature-gated ERC-1155 perks (drinks, pizza slices) for rsv.pizza e
 | `redeemTicket(account, id, amount)` | the holder only (`msg.sender == account`) | Moves the perk to `0x…dEaD` |
 | `adminRedeem(account, id, amount)` | `ADMIN_ROLE` (host's server smart account) | Host Vouch: burns a guest's ticket to `0x…dEaD` when their phone is dead |
 | `adminTransfer(from, to, id, amount)` | `ADMIN_ROLE` | Wingman Transfer: moves tickets between two guests; the only bypass of the soulbound rule |
+| `adminMint(to, id, amount)` | `ADMIN_ROLE` | "Make It Right": grant extra perks mid-event (still soulbound, still redeemable) |
 | `pause / unpause / setURI` | `OPERATOR_ROLE` | Emergency stop (also blocks admin actions), metadata |
 | `grantRole / revokeRole(SIGNER_ROLE, …)` | `DEFAULT_ADMIN_ROLE` | Rotate the backend signer |
 
 **Soulbound:** `_update` reverts unless it is a mint (`from == 0`), a burn (`to == 0`), a redemption (`to == 0x…dEaD`), or happens inside `adminTransfer` (a transient `_adminOverride` flag, cleared in the same call and automatically at the end of the transaction). `setApprovalForAll` always reverts, so apart from `ADMIN_ROLE` nobody but the holder can move a ticket.
 
 **Replay protection:** every voucher carries a `claimId` (backend derives it from `eventId + rsvpId`) that is marked used on first mint, plus a short `deadline`. The backend can safely re-issue a voucher for the same RSVP (e.g. after a failed UserOp) — only one can ever execute.
+
+> **Upgrading an existing deployment:** the contract is not upgradeable. `adminMint` (added after the first release) requires a redeploy. Re-grant `SIGNER_ROLE` / `ADMIN_ROLE` and update `NEXT_PUBLIC_TICKETS_ADDRESS`.
 
 ## Commands
 

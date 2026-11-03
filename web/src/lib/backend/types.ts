@@ -1,4 +1,4 @@
-import type { GuestStatus, HostGuest, HostSettings, PreArrivalResult, PublicEvent, TicketType } from "@/lib/types";
+import type { GuestStatus, HostGuest, HostSettings, PreArrivalResult, PublicEvent, RecentRedemption, TicketType } from "@/lib/types";
 import type { ResolvedTheme } from "@/lib/theme";
 import type { GuestSmartAccount } from "@/lib/aa";
 import type { BurnState } from "@/hooks/useBurn";
@@ -21,6 +21,8 @@ export type MeResponse = {
    * phone clock is wrong still shows the bartender's color. Measured at the RTT midpoint.
    */
   clockOffset: number;
+  /** Bartender safety net: this guest's redemptions in the last 30 minutes, newest first. */
+  recentRedemptions: RecentRedemption[];
 };
 
 export type GuestWallet = {
@@ -96,6 +98,11 @@ export type AdminRedeemHandle = {
   burn: (onState: (s: BurnState) => void) => void;
 };
 
+export type GrantInput = { rsvpId: string; tokenId: number; amount: number; reason?: string };
+
+/** Settings patch; `ticketTypes` replaces the whole ticket configuration. */
+export type SettingsPatch = Partial<HostSettings> & { ticketTypes?: TicketType[] };
+
 export type TransferInput = { fromRsvpId: string; toRsvpId: string; tokenId: number; amount: number };
 
 export interface HostBackend {
@@ -106,7 +113,9 @@ export interface HostBackend {
   useKioskCode(eventId: string, enabled: boolean): { data?: { code: string; expiresAt: number }; error?: string };
   useHostActions(eventId: string): {
     setCheckedIn: (rsvpId: string, checkedIn: boolean) => Promise<void>;
-    saveSettings: (patch: Partial<HostSettings>) => Promise<void>;
+    saveSettings: (patch: SettingsPatch) => Promise<void>;
+    /** "Make It Right" — mint extra tickets to a claimed guest. Throws Error(userMessage). */
+    grantTickets: (g: GrantInput) => Promise<void>;
     /** Host Vouch for `amount` tickets of one type in a single gesture. */
     adminRedeem: (rsvpId: string, tokenId: number, amount: number) => AdminRedeemHandle;
     /** Pre-arrival links for every rsvpd + unclaimed guest. */

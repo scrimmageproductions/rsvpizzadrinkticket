@@ -26,7 +26,14 @@ export type DemoGuest = {
   redeemed: Record<string, number>;
   /** tokenId → number redeemed by the host on the guest's behalf (Host Vouch) */
   adminRedeemed: Record<string, number>;
+  /** What this guest actually minted at claim (snapshot — later config edits don't change it) */
+  claimedBundle: { tokenId: number; amount: number }[] | null;
+  /** tokenId → extra tickets granted by staff ("Make It Right") */
+  granted: Record<string, number>;
 };
+
+/** Timestamped redemption receipts (guest's "Recent Redemptions" list). */
+export type DemoRedemption = { id: string; guestId: string; tokenId: number; amount: number; at: string; byHost: boolean };
 
 export type DemoTransfer = { from: string; to: string; tokenId: number; amount: number; at: string };
 
@@ -43,9 +50,17 @@ export type DemoEvent = {
   ticketTypes: TicketType[];
   /** Door QR on/off. The demo key itself is fixed per event (see demoKioskSecret). */
   kioskEnabled: boolean;
+  /** Max tickets the host will pay for (null = none). */
+  budget: number | null;
 };
 
-export type DemoDB = { version: 3; event: DemoEvent; guests: DemoGuest[]; transfers: DemoTransfer[] };
+export type DemoDB = {
+  version: 4;
+  event: DemoEvent;
+  guests: DemoGuest[];
+  transfers: DemoTransfer[];
+  redemptions: DemoRedemption[];
+};
 
 const DB_KEY = "rsvpizza:demo:db";
 const GUEST_KEY = "rsvpizza:demo:guest-session";
@@ -53,13 +68,13 @@ const STAFF_KEY = "rsvpizza:demo:staff-session";
 
 const guest = (id: string, name: string, email: string | null, phone: string | null, over: Partial<DemoGuest> = {}): DemoGuest => ({
   id, name, email, phone, status: "rsvpd", checkedInAt: null, checkedInBy: null, invitedAt: null,
-  claimedAt: null, redeemed: {}, adminRedeemed: {}, ...over,
+  claimedAt: null, redeemed: {}, adminRedeemed: {}, claimedBundle: null, granted: {}, ...over,
 });
 
 export function seed(): DemoDB {
   const t = new Date().toISOString();
   return {
-    version: 3,
+    version: 4,
     event: {
       id: DEMO_EVENT_ID,
       name: "Global Pizza Party — NYC",
@@ -75,6 +90,7 @@ export function seed(): DemoDB {
         { tokenId: 2, label: "Pizza Slice", emoji: "🍕", amount: 1 },
       ],
       kioskEnabled: false,
+      budget: 24,
     },
     guests: [
       guest("g1", "Ada Lovelace", "ada@example.com", null),
@@ -82,17 +98,23 @@ export function seed(): DemoDB {
       guest("g3", "Margherita Quattro", null, "+15555550123"),
       guest("g4", "Pepper Roni", "pepper@example.com", null, { status: "checked_in", checkedInAt: t, checkedInBy: "door" }),
       guest("g5", "Cal Zone", "cal@example.com", null, {
-        status: "checked_in", checkedInAt: t, checkedInBy: "door", claimedAt: t, redeemed: { "1": 1 },
+        status: "checked_in", checkedInAt: t, checkedInBy: "door", claimedAt: t, redeemed: { "1": 1 }, claimedBundle: BUNDLE,
       }),
       guest("g6", "Burrata Bell", "burrata@example.com", null),
       guest("g7", "Anchovy Andy", null, "+15555550188"),
       guest("g8", "Basil Hayden", "basil@example.com", null, {
-        status: "checked_in", checkedInAt: t, checkedInBy: "door", claimedAt: t,
+        status: "checked_in", checkedInAt: t, checkedInBy: "door", claimedAt: t, claimedBundle: BUNDLE,
       }),
     ],
     transfers: [],
+    redemptions: [{ id: "seed-r1", guestId: "g5", tokenId: 1, amount: 1, at: t, byHost: false }],
   };
 }
+
+const BUNDLE = [
+  { tokenId: 1, amount: 2 },
+  { tokenId: 2, amount: 1 },
+];
 
 // ── tiny external store ───────────────────────────────────────────────────────────────────
 const listeners = new Set<() => void>();
@@ -143,7 +165,7 @@ const SEED = { current: null as DemoDB | null };
 const getDB = () => {
   const db = readKey<DemoDB>(DB_KEY, () => (SEED.current ??= seed()));
   // Older demo data shape → start fresh.
-  return db?.version === 3 ? db : (SEED.current ??= seed());
+  return db?.version === 4 ? db : (SEED.current ??= seed());
 };
 
 /** null during SSR / prerender → callers render a loading state. */

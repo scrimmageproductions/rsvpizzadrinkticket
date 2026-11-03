@@ -5,9 +5,19 @@ import { keccak256, toHex } from "viem";
 import { demoDB, fakeHash, sleep, useDemoDB, useDemoGuestSession, useDemoStaffSession, type DemoDB, type DemoGuest } from "@/lib/demo/store";
 import { useNow } from "@/hooks/useNow";
 import { resolveTheme, type ResolvedTheme } from "@/lib/theme";
-import type { GuestStatus, HostGuest, PreArrivalResult, PublicEvent } from "@/lib/types";
+import type { GuestStatus, HostGuest, PreArrivalResult, PublicEvent, RecentRedemption, TicketType } from "@/lib/types";
 import { currentKioskCode, demoKioskSecret, kioskStep, PRESENCE_TTL_MS, verifyKioskCode } from "@/lib/kiosk";
-import type { AdminRedeemHandle, GuestBackend, HostBackend, InviteInfo, RedeemOutcome, TransferInput } from "./types";
+import type {
+  AdminRedeemHandle,
+  GrantInput,
+  GuestBackend,
+  HostBackend,
+  InviteInfo,
+  RedeemOutcome,
+  SettingsPatch,
+  TransferInput,
+} from "./types";
+import { ticketChangeError, TicketTypesSchema } from "@/lib/tickets";
 
 /**
  * Demo Mode backend: same contract as live.ts, but every "server" and "chain" step is simulated
@@ -30,6 +40,34 @@ const nextOf = (db: DemoDB, now: number): ResolvedTheme | null => {
   return cur.validUntil ? themeOf(db, cur.validUntil) : null;
 };
 
+const receipt = (guestId: string, tokenId: number, amount: number, byHost: boolean) => ({
+  id: crypto.randomUUID(),
+  guestId,
+  tokenId,
+  amount,
+  at: new Date().toISOString(),
+  byHost,
+});
+
+const RECENT_WINDOW_MS = 30 * 60_000;
+const recentOf = (db: DemoDB, guestId: string, now: number): RecentRedemption[] =>
+  db.redemptions
+    .filter((r) => r.guestId === guestId && now - Date.parse(r.at) < RECENT_WINDOW_MS)
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 20)
+    .map(({ id, tokenId, amount, at, byHost }) => ({ id, tokenId, amount, at, byHost }));
+
+/** Token ids any guest holds or has held (claimed, granted, moved) — can't be deleted. */
+function demoTokensInUse(db: DemoDB): Set<number> {
+  const used = new Set<number>();
+  for (const g of db.guests) {
+    for (const b of g.claimedBundle ?? []) if (b.amount > 0) used.add(b.tokenId);
+    for (const [k, v] of Object.entries(g.granted ?? {})) if (v > 0) used.add(Number(k));
+  }
+  for (const t of db.transfers) used.add(t.tokenId);
+  return used;
+}
+
 const toPublicEvent = (db: DemoDB, id: string): PublicEvent => ({
   id,
   name: db.event.name,
@@ -38,20 +76,26 @@ const toPublicEvent = (db: DemoDB, id: string): PublicEvent => ({
   ticketTypes: db.event.ticketTypes,
 });
 
-/** Per-token ledger for one guest: minted + transfers in − transfers out − redeemed (guest + admin). */
+/** Per-token ledger: claimed bundle + grants + transfers in − out − redeemed (guest + admin). */
 export function ledgerOf(db: DemoDB, g: DemoGuest) {
   const per = db.event.ticketTypes.map((t) => {
-    const minted = g.claimedAt ? t.amount : 0;
+    // What this guest minted at claim time — not today's (editable) config.
+    const minted = g.claimedAt ? (g.claimedBundle?.find((b) => b.tokenId === t.tokenId)?.amount ?? 0) : 0;
+    const granted = g.granted?.[t.tokenId] ?? 0;
     const tin = db.transfers.filter((x) => x.to === g.id && x.tokenId === t.tokenId).reduce((a, x) => a + x.amount, 0);
     const tout = db.transfers.filter((x) => x.from === g.id && x.tokenId === t.tokenId).reduce((a, x) => a + x.amount, 0);
     const byGuest = g.redeemed[t.tokenId] ?? 0;
     const byAdmin = g.adminRedeemed?.[t.tokenId] ?? 0;
-    return { tokenId: t.tokenId, minted, tin, tout, byGuest, byAdmin, left: Math.max(0, minted + tin - tout - byGuest - byAdmin) };
+    return {
+      tokenId: t.tokenId, minted, granted, tin, tout, byGuest, byAdmin,
+      left: Math.max(0, minted + granted + tin - tout - byGuest - byAdmin),
+    };
   });
   const sum = (k: keyof (typeof per)[number]) => per.reduce((a, x) => a + (x[k] as number), 0);
   return {
     remaining: Object.fromEntries(per.map((x) => [x.tokenId, x.left])) as Record<string, number>,
     minted: sum("minted"),
+    granted: sum("granted"),
     redeemedByGuest: sum("byGuest"),
     redeemedByAdmin: sum("byAdmin"),
     transferredIn: sum("tin"),
@@ -85,7 +129,7 @@ export function demoLogin(identifier: string): string {
       guests: [
         {
           id: newId, name, email, phone, status: "rsvpd", checkedInAt: null, checkedInBy: null, invitedAt: null,
-          claimedAt: null, redeemed: {}, adminRedeemed: {},
+          claimedAt: null, redeemed: {}, adminRedeemed: {}, claimedBundle: null, granted: {},
         },
         ...db.guests,
       ],
@@ -133,6 +177,7 @@ export const demoGuest: GuestBackend = {
         theme: g.claimedAt ? themeOf(db, now) : null,
         themeNext: g.claimedAt ? nextOf(db, now) : null,
         clockOffset: 0, // demo "server" is this browser — same clock
+        recentRedemptions: g.claimedAt ? recentOf(db, g.id, now) : [],
       },
       isError: false,
       refetch: () => {},
@@ -167,7 +212,16 @@ export const demoGuest: GuestBackend = {
         await sleep(2000); // simulated gasless mint on Avalanche
         demoDB.update((d) => ({
           ...d,
-          guests: d.guests.map((x) => (x.id === g.id ? { ...x, claimedAt: x.claimedAt ?? new Date().toISOString() } : x)),
+          guests: d.guests.map((x) =>
+            x.id === g.id
+              ? {
+                  ...x,
+                  claimedAt: x.claimedAt ?? new Date().toISOString(),
+                  // snapshot today's allocation, like the live claim route
+                  claimedBundle: x.claimedBundle ?? d.event.ticketTypes.filter((t) => t.amount > 0).map((t) => ({ tokenId: t.tokenId, amount: t.amount })),
+                }
+              : x,
+          ),
         }));
       },
       [session],
@@ -269,6 +323,7 @@ export const demoGuest: GuestBackend = {
           demoDB.update((d) => ({
             ...d,
             guests: d.guests.map((x) => (x.id === me.id ? { ...x, redeemed: { ...x.redeemed, [tokenId]: used + 1 } } : x)),
+            redemptions: [...d.redemptions, receipt(me.id, tokenId, 1, false)],
           }));
           return { verdict: "ok", theme: themeOf(fresh, Date.now()) };
         });
@@ -317,6 +372,7 @@ export const demoHost: HostBackend = {
           themePalette: e.themePalette,
           rotationMinutes: e.rotationMinutes,
           kioskEnabled: e.kioskEnabled,
+          eventBudget: e.budget,
         },
         theme: themeOf(db, now),
         ticketTypes: e.ticketTypes,
@@ -363,8 +419,18 @@ export const demoHost: HostBackend = {
         ),
       }));
     }, []);
-    const saveSettings = useCallback(async (p: Parameters<ReturnType<HostBackend["useHostActions"]>["saveSettings"]>[0]) => {
+    const saveSettings = useCallback(async (p: SettingsPatch) => {
       await sleep(150);
+      // Same validation + "don't delete a type guests hold" rule as the live API.
+      let next: TicketType[] | undefined;
+      if (p.ticketTypes) {
+        const parsed = TicketTypesSchema.safeParse(p.ticketTypes);
+        if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid ticket types");
+        const db = demoDB.get();
+        const err = ticketChangeError(db.event.ticketTypes, parsed.data, demoTokensInUse(db));
+        if (err) throw new Error(err);
+        next = parsed.data;
+      }
       demoDB.update((d) => ({
         ...d,
         event: {
@@ -375,6 +441,8 @@ export const demoHost: HostBackend = {
           ...(p.themePalette !== undefined && { themePalette: p.themePalette as DemoDB["event"]["themePalette"] }),
           ...(p.rotationMinutes !== undefined && { rotationMinutes: p.rotationMinutes }),
           ...(p.kioskEnabled !== undefined && { kioskEnabled: p.kioskEnabled }),
+          ...(p.eventBudget !== undefined && { budget: p.eventBudget }),
+          ...(next && { ticketTypes: next }),
         },
       }));
     }, []);
@@ -394,6 +462,7 @@ export const demoHost: HostBackend = {
               ? { ...x, adminRedeemed: { ...x.adminRedeemed, [tokenId]: (x.adminRedeemed?.[tokenId] ?? 0) + amount } }
               : x,
           ),
+          redemptions: [...d.redemptions, receipt(rsvpId, tokenId, amount, true)],
         }));
         return { verdict: "ok", theme: themeOf(db, Date.now()) };
       });
@@ -440,7 +509,24 @@ export const demoHost: HostBackend = {
       return res;
     }, []);
 
-    return { setCheckedIn, saveSettings, adminRedeem, transfer, sendPreArrivalLinks };
+    /** "Make It Right": credit a claimed guest; simulated ADMIN_ROLE adminMint. */
+    const grantTickets = useCallback(async ({ rsvpId, tokenId, amount }: GrantInput) => {
+      await sleep(700);
+      const db = demoDB.get();
+      const g = db.guests.find((x) => x.id === rsvpId);
+      if (!g) throw new Error("Guest not found.");
+      if (!g.claimedAt) throw new Error("This guest hasn't claimed tickets yet, so there's no wallet to send to.");
+      if (!db.event.ticketTypes.some((t) => t.tokenId === tokenId)) throw new Error("That ticket type doesn't exist.");
+      if (!Number.isInteger(amount) || amount < 1 || amount > 20) throw new Error("Grant between 1 and 20.");
+      demoDB.update((d) => ({
+        ...d,
+        guests: d.guests.map((x) =>
+          x.id === rsvpId ? { ...x, granted: { ...x.granted, [tokenId]: (x.granted?.[tokenId] ?? 0) + amount } } : x,
+        ),
+      }));
+    }, []);
+
+    return { setCheckedIn, saveSettings, adminRedeem, transfer, sendPreArrivalLinks, grantTickets };
   },
 
   /** Door screen code, computed locally from the demo event's kiosk key every 30 s step. */

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button, ErrorNote, Kicker } from "@/components/ui";
 import { ThemeCountdown } from "./ThemeCountdown";
 import { DoorArrival } from "./DoorArrival";
+import { TicketConfig } from "./TicketConfig";
 import { PALETTE, THEME_KEYS, type ThemeKey } from "@/lib/theme";
 import { hostBackend, type HostSettingsData } from "@/lib/backend";
 import type { HostSettings } from "@/lib/types";
@@ -126,6 +127,8 @@ export function SettingsPanel({ eventId, data }: { eventId: string; data: HostSe
           })}
         </div>
       </div>
+      <TicketConfig eventId={eventId} data={data} />
+
       <DoorArrival eventId={eventId} data={data} />
 
       <div className="lg:col-span-2">

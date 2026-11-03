@@ -3,7 +3,7 @@ import { getAddress, isAddressEqual } from "viem";
 import { z } from "zod";
 import { handler, json } from "@/lib/server/http";
 import { HttpError, requireUser } from "@/lib/server/auth";
-import { findRsvp, loadEvent } from "@/lib/server/guests";
+import { allocationOf, findRsvp, loadEvent } from "@/lib/server/guests";
 import { db } from "@/lib/server/supabase";
 import { claimIdFor, signClaimBatch, VOUCHER_TTL_SECONDS } from "@/lib/server/signer";
 import { expectedSmartAccount } from "@/lib/server/chain";
@@ -66,8 +66,12 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/events/[eventId]
   // ── Sign. claimId is fixed per RSVP, so re-issuing (e.g. after a failed UserOp) is safe:
   //    the contract marks it used on first mint.
   const claimId = claimIdFor(event.id, rsvp.id);
-  const ids = event.ticket_types.map((t) => BigInt(t.tokenId));
-  const amounts = event.ticket_types.map((t) => BigInt(t.amount));
+  // Snapshot the allocation on first claim; a re-issued voucher reuses it, so editing ticket
+  // types mid-event never changes what an already-claiming guest gets (or what the ledger thinks).
+  const bundle = rsvp.claimed_bundle ?? allocationOf(event);
+  if (!bundle.length) throw new HttpError(409, "no_tickets", "No tickets are being handed out right now.");
+  const ids = bundle.map((b) => BigInt(b.tokenId));
+  const amounts = bundle.map((b) => BigInt(b.amount));
   const deadline = BigInt(Math.floor(Date.now() / 1000) + VOUCHER_TTL_SECONDS);
   const signature = await signClaimBatch({ to: expected, ids, amounts, claimId, deadline });
 
@@ -77,6 +81,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/events/[eventId]
       wallet_address: expected,
       claim_id: claimId,
       claimed_at: rsvp.claimed_at ?? new Date().toISOString(),
+      claimed_bundle: bundle,
       pin_failures: 0,
     })
     .eq("id", rsvp.id);

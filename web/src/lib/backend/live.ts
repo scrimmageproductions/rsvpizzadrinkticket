@@ -8,10 +8,11 @@ import { sendClaim } from "@/lib/aa";
 import { useSmartAccount } from "@/hooks/useSmartAccount";
 import { useBurn, useDrainBurnQueue } from "@/hooks/useBurn";
 import { useOnchainTickets } from "@/hooks/useOnchainTickets";
-import type { ClaimVoucher, HostGuest, HostSettings, PreArrivalResult, PublicEvent } from "@/lib/types";
+import type { ClaimVoucher, HostGuest, PreArrivalResult, PublicEvent } from "@/lib/types";
 import { pickTheme, type ResolvedTheme } from "@/lib/theme";
 import type {
   AdminRedeemHandle,
+  GrantInput,
   GuestBackend,
   GuestWallet,
   HostBackend,
@@ -19,6 +20,7 @@ import type {
   InviteInfo,
   MeResponse,
   RedeemOutcome,
+  SettingsPatch,
   TransferInput,
 } from "./types";
 
@@ -309,7 +311,7 @@ export const liveHost: HostBackend = {
       [api, qc, eventId],
     );
     const saveSettings = useCallback(
-      async (patch: Partial<HostSettings>) => {
+      async (patch: SettingsPatch) => {
         try {
           await api(`/api/host/${eventId}/settings`, { method: "PATCH", json: patch });
         } catch (e) {
@@ -387,6 +389,19 @@ export const liveHost: HostBackend = {
       }
     }, [api, qc, eventId]);
 
-    return { setCheckedIn, saveSettings, adminRedeem, transfer, sendPreArrivalLinks };
+    const grantTickets = useCallback(
+      async (g: GrantInput) => {
+        try {
+          await api(`/api/host/${eventId}/admin-mint`, { json: g });
+        } catch (e) {
+          throw new Error(e instanceof ApiError ? e.message : "Couldn't grant tickets");
+        } finally {
+          qc.invalidateQueries({ queryKey: ["host-guests", eventId] });
+        }
+      },
+      [api, qc, eventId],
+    );
+
+    return { setCheckedIn, saveSettings, adminRedeem, transfer, sendPreArrivalLinks, grantTickets };
   },
 };

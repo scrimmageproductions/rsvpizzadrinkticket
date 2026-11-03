@@ -63,6 +63,16 @@ export async function adminTransferOnChain(from: Address, to: Address, tokenId: 
   return sendTracked(data, onAccepted);
 }
 
+/** "Make It Right": mint extra perks to a guest's wallet (ADMIN_ROLE). */
+export async function adminMintOnChain(to: Address, tokenId: number, amount: number, onAccepted?: (h: Hex) => Promise<void>) {
+  const data = encodeFunctionData({
+    abi: rsvpTicketsAbi,
+    functionName: "adminMint",
+    args: [to, BigInt(tokenId), BigInt(amount)],
+  });
+  return sendTracked(data, onAccepted);
+}
+
 /** Submit an admin UserOp; `onAccepted` fires with the userOpHash as soon as the bundler takes it. */
 async function sendTracked(data: Hex, onAccepted?: (h: Hex) => Promise<void>) {
   const client = await adminClient();

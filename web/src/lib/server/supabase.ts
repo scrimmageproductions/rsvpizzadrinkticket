@@ -26,6 +26,7 @@ export type EventRow = {
   rotation_minutes: number;
   ticket_types: { tokenId: number; label: string; emoji: string; amount: number }[];
   kiosk_enabled: boolean;
+  event_budget: number | null;
   kiosk_secret: string | null;
 };
 
@@ -44,5 +45,7 @@ export type RsvpRow = {
   claimed_at: string | null;
   pin_failures: number;
   invited_at: string | null;
+  /** What this guest actually minted at claim time: [{ tokenId, amount }] */
+  claimed_bundle: { tokenId: number; amount: number }[] | null;
   invite_count: number;
 };

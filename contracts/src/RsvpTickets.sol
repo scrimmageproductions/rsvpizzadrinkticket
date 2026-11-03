@@ -61,6 +61,7 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
     event TicketsClaimed(address indexed to, bytes32 indexed claimId, uint256[] ids, uint256[] amounts);
     event TicketRedeemed(address indexed account, uint256 indexed id, uint256 amount);
     event AdminRedeemed(address indexed admin, address indexed account, uint256 indexed id, uint256 amount);
+    event AdminMinted(address indexed admin, address indexed to, uint256 indexed id, uint256 amount);
     event AdminTransferred(
         address indexed admin, address indexed from, address indexed to, uint256 id, uint256 amount
     );
@@ -160,6 +161,16 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
     }
 
     // ───────────────────────────────────────────── admin override (dead phone / no signal)
+
+    /// @notice "Make It Right": grant extra perks to a guest mid-event (comp an upset guest, reward
+    ///         a VIP). Bypasses the voucher flow, so it is ADMIN_ROLE-only; the backend records every
+    ///         grant with the staff member who made it and counts it against the event budget.
+    function adminMint(address to, uint256 id, uint256 amount) external onlyRole(ADMIN_ROLE) whenNotPaused {
+        if (amount == 0) revert ZeroAmount();
+        if (to == address(0) || to == BURN_ADDRESS) revert InvalidRecipient(to);
+        _mint(to, id, amount, "");
+        emit AdminMinted(msg.sender, to, id, amount);
+    }
 
     /// @notice Host Vouch: burn a guest's ticket (to 0x…dEaD) without the guest's device.
     function adminRedeem(address account, uint256 id, uint256 amount) external onlyRole(ADMIN_ROLE) whenNotPaused {

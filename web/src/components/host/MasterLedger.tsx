@@ -4,17 +4,19 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { AdminRedeem } from "./AdminRedeem";
 import { WingmanTransfer } from "./WingmanTransfer";
+import { GrantTickets } from "./GrantTickets";
 import { hostBackend, type HostSettingsData } from "@/lib/backend";
 import type { HostGuest } from "@/lib/types";
 
 /**
- * MASTER GUEST LEDGER — every checked-in guest with live balances, plus the two overrides
- * for dead phones: Admin Redeem (Host Vouch) and Transfer (Wingman).
+ * MASTER GUEST LEDGER — every checked-in guest with live balances, plus the overrides:
+ * Admin Redeem (Host Vouch), Transfer (Wingman) for dead phones, and Grant Tickets (Make It Right).
  */
 export function MasterLedger({ eventId, settings }: { eventId: string; settings: HostSettingsData }) {
   const { data, isLoading } = hostBackend.useHostGuests(eventId);
   const [vouch, setVouch] = useState<HostGuest | null>(null);
   const [wingman, setWingman] = useState<HostGuest | null>(null);
+  const [grant, setGrant] = useState<HostGuest | null>(null);
   const [q, setQ] = useState("");
 
   const inside = (data ?? []).filter((g) => g.status === "checked_in");
@@ -66,7 +68,7 @@ export function MasterLedger({ eventId, settings }: { eventId: string; settings:
                 <p className="text-xl font-bold">{g.name}</p>
                 <p className="font-mono text-[11px] uppercase tracking-wider text-mute">
                   {claimed
-                    ? `minted ${g.minted} · used ${g.redeemedByGuest}${g.redeemedByAdmin ? ` · vouched ${g.redeemedByAdmin}` : ""}${
+                    ? `minted ${g.minted}${g.granted ? ` · +${g.granted} granted` : ""} · used ${g.redeemedByGuest}${g.redeemedByAdmin ? ` · vouched ${g.redeemedByAdmin}` : ""}${
                         g.transferredIn || g.transferredOut ? ` · moved +${g.transferredIn}/−${g.transferredOut}` : ""
                       }`
                     : "checked in · hasn't claimed tickets"}
@@ -94,6 +96,14 @@ export function MasterLedger({ eventId, settings }: { eventId: string; settings:
                 >
                   Transfer
                 </button>
+                <button
+                  disabled={!claimed}
+                  title={claimed ? "Grant extra tickets" : "Guest must claim first (that creates their wallet)"}
+                  onClick={() => setGrant(g)}
+                  className="press border-2 border-cheese px-3 py-2 font-display text-xs uppercase text-cheese disabled:opacity-30"
+                >
+                  🎁 Grant tickets
+                </button>
               </div>
             </motion.li>
           );
@@ -102,6 +112,19 @@ export function MasterLedger({ eventId, settings }: { eventId: string; settings:
       </ul>
 
       {vouch && <AdminRedeem eventId={eventId} guest={live(vouch)!} settings={settings} onClose={() => setVouch(null)} />}
+      {grant && (
+        <GrantTickets
+          eventId={eventId}
+          guest={live(grant)!}
+          ticketTypes={settings.ticketTypes}
+          budget={settings.settings.eventBudget}
+          worstCase={(data ?? []).reduce(
+            (a, g) => a + g.redeemedByGuest + g.redeemedByAdmin + Object.values(g.remaining).reduce((x, y) => x + y, 0),
+            0,
+          )}
+          onClose={() => setGrant(null)}
+        />
+      )}
       {wingman && (
         <WingmanTransfer
           eventId={eventId}
