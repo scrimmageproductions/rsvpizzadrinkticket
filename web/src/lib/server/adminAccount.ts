@@ -22,6 +22,7 @@ async function build() {
   const pk = process.env.ADMIN_PRIVATE_KEY as Hex | undefined;
   const key = process.env.PIMLICO_API_KEY;
   if (!pk || !key) throw new Error("ADMIN_PRIVATE_KEY / PIMLICO_API_KEY not set");
+  // Same chain as the guests' UserOps: 8453 (Base) / 84532 (Base Sepolia), from lib/chain.ts.
   const url = `https://api.pimlico.io/v2/${chain.id}/rpc?apikey=${key}`;
   const account = await toSimpleSmartAccount({ client: publicClient, owner: privateKeyToAccount(pk), entryPoint });
   const pimlico = createPimlicoClient({ chain, transport: http(url), entryPoint });

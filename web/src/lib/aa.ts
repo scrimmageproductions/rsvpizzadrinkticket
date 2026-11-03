@@ -18,7 +18,7 @@ import type { ClaimVoucher } from "@/lib/types";
  *   SimpleAccount (counterfactual, deployed on first UserOp)  ──holds──▶  RsvpTickets ERC-1155
  *        │ UserOperation
  *        ▼
- *   /api/aa  ──▶  Pimlico bundler + verifying paymaster (pays the AVAX)  ──▶  Avalanche C-Chain
+ *   /api/aa  ──▶  Pimlico bundler + verifying paymaster (pays the ETH gas)  ──▶  Base
  */
 
 const entryPoint = { address: entryPoint07Address, version: "0.7" } as const;

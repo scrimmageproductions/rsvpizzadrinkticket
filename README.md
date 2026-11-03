@@ -62,7 +62,7 @@ SimpleAccount v0.7 (counterfactual; deployed by its first UserOp)
    ▼
 /api/aa  ── auth'd proxy: only RsvpTickets calls, pins sponsorship policy, hides API key
    ▼
-Pimlico bundler + verifying paymaster (pays AVAX) ──▶ Avalanche C-Chain ──▶ token lands at 0x…dEaD
+Pimlico bundler + verifying paymaster (pays the ETH gas) ──▶ Base (OP-stack L2, ~2 s blocks) ──▶ token lands at 0x…dEaD
 ```
 
 Code: [`web/src/lib/aa.ts`](web/src/lib/aa.ts), [`web/src/hooks/useSmartAccount.ts`](web/src/hooks/useSmartAccount.ts), [`web/src/hooks/useBurn.ts`](web/src/hooks/useBurn.ts), [`web/src/app/api/aa/route.ts`](web/src/app/api/aa/route.ts).
@@ -144,7 +144,7 @@ git submodule update --init --recursive
 forge test
 ```
 
-Deploy to Fuji (see [`contracts/README.md`](contracts/README.md)) with `SIGNER_ADDRESS` = the address of the key you'll put in `CLAIM_SIGNER_PRIVATE_KEY`.
+Deploy to Base Sepolia (see [`contracts/README.md`](contracts/README.md)) with `SIGNER_ADDRESS` = the address of the key you'll put in `CLAIM_SIGNER_PRIVATE_KEY`. Set `NEXT_PUBLIC_CHAIN=baseSepolia` (or `base`) to match. The EIP-712 domain is bound to `block.chainid`, so a mismatch makes every claim fail.
 
 ### 2. Supabase
 
@@ -156,7 +156,7 @@ Create an app, enable **Email, SMS, Google**, and turn on **embedded wallets →
 
 ### 4. Pimlico
 
-Create an API key and a **sponsorship policy** restricted to your `RsvpTickets` address on Avalanche / Fuji.
+Create an API key and a **sponsorship policy** on **Base / Base Sepolia**, restricted to your `RsvpTickets` address. The app calls `api.pimlico.io/v2/<8453|84532>/rpc` automatically from `NEXT_PUBLIC_CHAIN`.
 
 ### 5. Web
 
@@ -173,9 +173,10 @@ npm run dev
 ### Checks
 
 ```bash
-cd contracts && forge test                         # 35 tests: vouchers, replay, expiry, soulbound fuzz, redeem, admin override, roles, pause
+cd contracts && forge test                         # 36 tests: vouchers, replay, expiry, soulbound fuzz, redeem, admin override, roles, pause
 cd web && npm run typecheck && npm run lint && npm run build
-anvil & cd web && npm run verify:voucher           # e2e: backend-signed voucher accepted by the real contract on anvil
+anvil --chain-id 84532 --optimism &                # local OP-stack node posing as Base Sepolia
+cd web && npm run verify:voucher                   # e2e on "Base": EIP-712 domain, cross-chain replay, claim, admin overrides
 ```
 
 ---

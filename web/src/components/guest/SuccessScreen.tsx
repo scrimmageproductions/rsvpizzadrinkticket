@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LiveClock } from "./LiveClock";
-import { explorerTx } from "@/lib/chain";
+import { chainLabel, explorerTx } from "@/lib/chain";
 import type { ResolvedTheme } from "@/lib/theme";
 import type { BurnState } from "@/hooks/useBurn";
 import type { TicketType } from "@/lib/types";
@@ -238,7 +238,7 @@ export function SuccessScreen({
 function BurnChip({ burn, verdict }: { burn: BurnState | null; verdict: Verdict }) {
   const base = "font-mono text-[11px] font-bold uppercase tracking-widest opacity-80";
   if (verdict === "offline") return <p className={base}>⚠ offline · will sync when back online</p>;
-  if (!burn || burn.phase === "submitting") return <p className={base}>⛓ burning ticket on Avalanche…</p>;
+  if (!burn || burn.phase === "submitting") return <p className={base}>⛓ burning ticket on {chainLabel}…</p>;
   if (burn.phase === "pending") return <p className={base}>⛓ confirming · gas sponsored</p>;
   if (burn.phase === "queued") return <p className={base}>⛓ queued · will retry</p>;
   if (burn.simulated) return <p className={base}>✓ burned on-chain (simulated) · {burn.txHash.slice(0, 10)}…</p>;

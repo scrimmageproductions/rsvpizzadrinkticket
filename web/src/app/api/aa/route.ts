@@ -85,6 +85,7 @@ export const POST = handler(async (req) => {
     }
   }
 
+  // chain.id = 8453 (Base) or 84532 (Base Sepolia) — set by NEXT_PUBLIC_CHAIN in lib/chain.ts.
   const upstream = await fetch(`https://api.pimlico.io/v2/${chain.id}/rpc?apikey=${key}`, {
     method: "POST",
     headers: { "content-type": "application/json" },

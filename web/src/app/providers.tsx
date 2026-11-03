@@ -46,7 +46,7 @@ export function Providers({ children }: { children: ReactNode }) {
         loginMethods: ["email", "sms", "google"],
         appearance: { theme: "dark", accentColor: "#FF4D1C", walletChainType: "ethereum-only" },
         // Every guest silently gets a non-custodial embedded EOA. It's only ever used as the
-        // *owner/signer* of their ERC-4337 smart account — it never holds AVAX.
+        // *owner/signer* of their ERC-4337 smart account — it never holds ETH (the paymaster pays gas on Base).
         embeddedWallets: {
           ethereum: { createOnLogin: "users-without-wallets" },
           // No "confirm transaction" modal: the bartender tap must be instant.

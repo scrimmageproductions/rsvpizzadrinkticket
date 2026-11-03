@@ -13,4 +13,4 @@ const account = await toSimpleSmartAccount({
   entryPoint: { address: entryPoint07Address, version: "0.7" },
 });
 console.log(`ADMIN_ROLE grantee (smart account): ${account.address}`);
-console.log(`cast send $TICKETS "grantRole(bytes32,address)" $(cast keccak ADMIN_ROLE) ${account.address} --rpc-url fuji`);
+console.log(`cast send $TICKETS "grantRole(bytes32,address)" $(cast keccak ADMIN_ROLE) ${account.address} --rpc-url ${chain.id === 8453 ? "base" : "base_sepolia"}`);

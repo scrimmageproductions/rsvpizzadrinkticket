@@ -75,7 +75,7 @@ export default function Home() {
       )}
 
       <footer className="mt-16 border-t-2 border-line pt-6 font-mono text-xs uppercase tracking-widest text-mute">
-        ERC-1155 soulbound perks · Avalanche C-Chain · ERC-4337 gasless · built for rsv.pizza
+        ERC-1155 soulbound perks · Base · ERC-4337 gasless · built for rsv.pizza
       </footer>
     </div>
   );

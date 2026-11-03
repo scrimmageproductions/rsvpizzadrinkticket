@@ -7,6 +7,7 @@ import { Button, ErrorNote, H1, Kicker, Pill, Shell } from "@/components/ui";
 import Link from "next/link";
 import { guestBackend, type GuestWallet } from "@/lib/backend";
 import { DEMO } from "@/lib/mode";
+import { chainLabel } from "@/lib/chain";
 import type { PublicEvent } from "@/lib/types";
 
 const PIN_LEN = 4;
@@ -114,7 +115,7 @@ export function ClaimScreen({
               </Button>
               {phase !== "idle" && (
                 <p className="text-center font-mono text-xs uppercase tracking-widest text-mute">
-                  {phase === "verifying" ? "Verifying PIN + check-in…" : DEMO ? "Minting (simulated) · gas is on us" : "Minting on Avalanche · gas is on us"}
+                  {phase === "verifying" ? "Verifying PIN + check-in…" : DEMO ? "Minting (simulated) · gas is on us" : `Minting on ${chainLabel} · gas is on us`}
                 </p>
               )}
               <ErrorNote>{err}</ErrorNote>

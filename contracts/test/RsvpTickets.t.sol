@@ -399,4 +399,38 @@ contract RsvpTicketsTest is Test {
         tickets.redeemTicket(guest, DRINK, 1);
         assertEq(tickets.balanceOf(DEAD, DRINK), 1);
     }
+
+    // ───────────────────────── chain binding (Base migration)
+
+    /// The EIP-712 domain is derived from block.chainid, so a voucher is only valid on the chain it
+    /// was signed for — e.g. an old Avalanche voucher can never be replayed on Base, and a Base
+    /// Sepolia voucher never on Base mainnet. Also covers OZ's cached-separator recompute path.
+    function test_voucher_boundToChainId_base() public {
+        uint256 BASE = 8453;
+        uint256 BASE_SEPOLIA = 84532;
+        uint256 AVALANCHE = 43114;
+        bytes32 claimId = keccak256("chain-bound");
+
+        // signed while the chain says Avalanche
+        vm.chainId(AVALANCHE);
+        uint256 deadline = block.timestamp + 600;
+        bytes memory avaxSig = _signClaim(signerPk, guest, DRINK, 1, claimId, deadline);
+        vm.chainId(BASE_SEPOLIA);
+        bytes memory sepoliaSig = _signClaim(signerPk, guest, DRINK, 1, claimId, deadline);
+
+        // now on Base mainnet: both foreign vouchers fail…
+        vm.chainId(BASE);
+        vm.expectRevert(RsvpTickets.InvalidSignature.selector);
+        tickets.claimTickets(guest, DRINK, 1, claimId, deadline, avaxSig);
+        vm.expectRevert(RsvpTickets.InvalidSignature.selector);
+        tickets.claimTickets(guest, DRINK, 1, claimId, deadline, sepoliaSig);
+
+        // …and a voucher signed for Base works.
+        bytes memory baseSig = _signClaim(signerPk, guest, DRINK, 1, claimId, deadline);
+        tickets.claimTickets(guest, DRINK, 1, claimId, deadline, baseSig);
+        assertEq(tickets.balanceOf(guest, DRINK), 1);
+
+        (, , , uint256 domainChainId, , , ) = tickets.eip712Domain();
+        assertEq(domainChainId, BASE);
+    }
 }
