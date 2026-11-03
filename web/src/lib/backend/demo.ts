@@ -25,6 +25,11 @@ const themeOf = (db: DemoDB, now: number): ResolvedTheme =>
     now,
   );
 
+const nextOf = (db: DemoDB, now: number): ResolvedTheme | null => {
+  const cur = themeOf(db, now);
+  return cur.validUntil ? themeOf(db, cur.validUntil) : null;
+};
+
 const toPublicEvent = (db: DemoDB, id: string): PublicEvent => ({
   id,
   name: db.event.name,
@@ -122,7 +127,13 @@ export const demoGuest: GuestBackend = {
       remaining: remainingOf(db, g),
     };
     return {
-      data: { event: toPublicEvent(db, eventId), status, theme: g.claimedAt ? themeOf(db, now) : null },
+      data: {
+        event: toPublicEvent(db, eventId),
+        status,
+        theme: g.claimedAt ? themeOf(db, now) : null,
+        themeNext: g.claimedAt ? nextOf(db, now) : null,
+        clockOffset: 0, // demo "server" is this browser — same clock
+      },
       isError: false,
       refetch: () => {},
     };

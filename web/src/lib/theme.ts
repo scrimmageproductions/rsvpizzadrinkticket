@@ -80,3 +80,26 @@ export function resolveTheme(cfg: ThemeConfig, now = Date.now()): ResolvedTheme 
   const key = isThemeKey(cfg.theme_color) ? cfg.theme_color : "neon-green";
   return { key, ...PALETTE[key], validUntil: null };
 }
+
+/**
+ * The slot after `current` (auto mode only). The server sends current + next — never the whole
+ * palette / rotation config — so a guest can't precompute tonight's schedule, but their phone can
+ * still cross a rotation boundary offline without showing the old color.
+ */
+export function nextTheme(cfg: ThemeConfig, current: ResolvedTheme): ResolvedTheme | null {
+  return current.validUntil ? resolveTheme(cfg, current.validUntil) : null;
+}
+
+/**
+ * Synchronous, clock-corrected pick for the redemption frame.
+ * `at` must be SERVER time (Date.now() + clockOffset). `stale` = beyond what we were told about.
+ */
+export function pickTheme(
+  current: ResolvedTheme,
+  next: ResolvedTheme | null,
+  at: number,
+): { theme: ResolvedTheme; stale: boolean } {
+  if (current.validUntil === null || at < current.validUntil) return { theme: current, stale: false };
+  if (next && (next.validUntil === null || at < next.validUntil)) return { theme: next, stale: false };
+  return { theme: next ?? current, stale: true };
+}

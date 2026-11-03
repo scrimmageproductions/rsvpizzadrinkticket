@@ -4,7 +4,7 @@ import { H1, Kicker, Pill, Shell } from "@/components/ui";
 import { TicketCard } from "./TicketCard";
 import { SyncButton } from "./SyncButton";
 import { useThemeFreshness } from "@/hooks/useThemeFreshness";
-import type { ResolvedTheme } from "@/lib/theme";
+import type { ThemeWindow } from "@/hooks/useThemeFreshness";
 import { guestBackend, type GuestWallet } from "@/lib/backend";
 import { DEMO } from "@/lib/mode";
 import type { PublicEvent } from "@/lib/types";
@@ -27,8 +27,8 @@ export function WalletDashboard({
   remaining: Record<string, number>;
   onchainTotal: number | undefined;
   wallet: GuestWallet;
-  /** cached Visual 2FA payload — only used here to detect that it went stale */
-  theme: ResolvedTheme | null;
+  /** cached Visual 2FA payload (current + next slot, clock offset) — only used to detect staleness */
+  theme: ThemeWindow;
 }) {
   guestBackend.useBackgroundSync(event.id, wallet);
   const { stale } = useThemeFreshness(theme);

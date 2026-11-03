@@ -12,7 +12,15 @@ import type { BurnState } from "@/hooks/useBurn";
 export type MeResponse = {
   event: PublicEvent;
   status: GuestStatus;
+  /** Visual 2FA color for the current slot (only once tickets are claimed). */
   theme: ResolvedTheme | null;
+  /** The following slot in auto-rotate mode (null in manual mode). */
+  themeNext: ResolvedTheme | null;
+  /**
+   * serverTime − device time, in ms. Add to Date.now() before picking a theme so a guest whose
+   * phone clock is wrong still shows the bartender's color. Measured at the RTT midpoint.
+   */
+  clockOffset: number;
 };
 
 export type GuestWallet = {

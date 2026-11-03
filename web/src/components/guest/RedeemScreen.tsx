@@ -7,7 +7,7 @@ import { Kicker, Pill } from "@/components/ui";
 import { SuccessScreen, type Verdict } from "./SuccessScreen";
 import { HoldToRedeem } from "./HoldToRedeem";
 import { SyncButton } from "./SyncButton";
-import { useThemeFreshness } from "@/hooks/useThemeFreshness";
+import { useThemeFreshness, type ThemeWindow } from "@/hooks/useThemeFreshness";
 import { guestBackend, type GuestWallet } from "@/lib/backend";
 import { DEMO } from "@/lib/mode";
 import type { BurnState } from "@/hooks/useBurn";
@@ -39,8 +39,8 @@ export function RedeemScreen({
   remaining: number;
   guestName: string;
   wallet: GuestWallet;
-  /** cached theme — only checked for staleness; never painted before a redemption */
-  theme: ResolvedTheme | null;
+  /** cached theme window — only checked for staleness; never painted before a redemption */
+  theme: ThemeWindow;
 }) {
   const { stale } = useThemeFreshness(theme);
   const router = useRouter();

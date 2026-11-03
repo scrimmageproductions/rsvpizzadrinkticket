@@ -1,7 +1,7 @@
 import { handler, json } from "@/lib/server/http";
 import { requireUser } from "@/lib/server/auth";
 import { findRsvp, guestStatus, loadEvent, toPublicEvent } from "@/lib/server/guests";
-import { resolveTheme } from "@/lib/theme";
+import { nextTheme, resolveTheme } from "@/lib/theme";
 
 /**
  * Polled by the guest app (~every 4s): RSVP / check-in state, off-chain balances, and —
@@ -15,10 +15,14 @@ export const GET = handler(async (req, ctx: RouteContext<"/api/events/[eventId]/
   const rsvp = await findRsvp(eventId, me);
   const status = await guestStatus(event, rsvp);
 
+  // Current color + only the NEXT slot (auto mode). Clients pick between them with
+  // their clock corrected by serverTime, so a phone that's 5 min fast still shows the right one.
+  const theme = status.state === "claimed" ? resolveTheme(event) : null;
   return json({
     event: toPublicEvent(event),
     status,
-    theme: status.state === "claimed" ? resolveTheme(event) : null,
+    theme,
+    themeNext: theme ? nextTheme(event, theme) : null,
     serverTime: Date.now(),
   });
 });

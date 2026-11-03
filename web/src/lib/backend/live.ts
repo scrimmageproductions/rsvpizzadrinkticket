@@ -9,7 +9,7 @@ import { useSmartAccount } from "@/hooks/useSmartAccount";
 import { useBurn, useDrainBurnQueue } from "@/hooks/useBurn";
 import { useOnchainTickets } from "@/hooks/useOnchainTickets";
 import type { ClaimVoucher, HostGuest, HostSettings, PreArrivalResult, PublicEvent } from "@/lib/types";
-import type { ResolvedTheme } from "@/lib/theme";
+import { pickTheme, type ResolvedTheme } from "@/lib/theme";
 import type {
   AdminRedeemHandle,
   GuestBackend,
@@ -29,12 +29,19 @@ function useMe(eventId: string) {
   const api = useApi();
   return useQuery({
     queryKey: ["me", eventId],
-    queryFn: () => api<MeResponse>(`/api/events/${eventId}/me`),
+    queryFn: async (): Promise<MeResponse> => {
+      // Time-drift correction: compare the server's clock with the midpoint of the round trip.
+      const sent = Date.now();
+      const r = await api<Omit<MeResponse, "clockOffset"> & { serverTime: number }>(`/api/events/${eventId}/me`);
+      const received = Date.now();
+      return { ...r, clockOffset: r.serverTime - (sent + received) / 2 };
+    },
     enabled: authenticated,
     refetchInterval: (q) => {
-      // Refresh right as an auto-rotating color expires, otherwise every 4s.
-      const until = q.state.data?.theme?.validUntil;
-      return until ? Math.max(500, Math.min(4000, until - Date.now() + 250)) : 4000;
+      // Refresh right as an auto-rotating color expires (server-corrected clock), otherwise every 4s.
+      const d = q.state.data;
+      const until = d?.theme?.validUntil;
+      return until ? Math.max(500, Math.min(4000, until - (Date.now() + d.clockOffset) + 250)) : 4000;
     },
   });
 }
@@ -180,7 +187,11 @@ export const liveGuest: GuestBackend = {
     return useCallback(
       (tokenId: number) => {
         const cached = qc.getQueryData<MeResponse>(["me", eventId]);
-        const theme = cached?.theme ?? null;
+        // Resolve the color for THIS instant (server-corrected), not whatever was cached at the
+        // last poll — crosses an auto-rotate boundary correctly even between polls / offline.
+        const theme = cached?.theme
+          ? pickTheme(cached.theme, cached.themeNext, Date.now() + cached.clockOffset).theme
+          : null;
         const id = crypto.randomUUID();
         if (!theme || cached?.status.state === "not_on_list" || !cached) {
           return { theme: null, outcome: Promise.resolve({ verdict: "offline" } as RedeemOutcome), burn: () => {} };

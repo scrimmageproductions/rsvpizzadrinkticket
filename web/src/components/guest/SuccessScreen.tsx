@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LiveClock } from "./LiveClock";
 import { explorerTx } from "@/lib/chain";
 import type { ResolvedTheme } from "@/lib/theme";
@@ -13,6 +13,9 @@ const jitter = (n: number) => {
   const x = Math.sin(n * 12.9898) * 43758.5453;
   return x - Math.floor(x);
 };
+
+/** The success screen closes itself (back to the wallet) after this long. */
+export const AUTO_RESET_MS = 15_000;
 
 /** "Flashbang": blinding white for exactly this long, then a hard cut to the theme color. */
 export const FLASH_MS = 150;
@@ -68,6 +71,17 @@ export function SuccessScreen({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
+  // Auto-reset: a guest can't walk away with a live success screen and flash it again later.
+  // The latest onDone is kept in a ref so re-renders (burn status, theme snap) don't restart it.
+  const onDoneRef = useRef(onDone);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
+  useEffect(() => {
+    const id = setTimeout(() => onDoneRef.current(), AUTO_RESET_MS);
+    return () => clearTimeout(id);
+  }, []);
+
   const bg = flash ? "#FFFFFF" : theme.hex;
   const ink = flash ? "#000000" : theme.ink;
 
@@ -89,6 +103,17 @@ export function SuccessScreen({
       data-flash={flash ? "white" : "theme"}
       role="status"
     >
+      {/* Auto-reset countdown: shrinks to nothing over 15 s, then the screen closes itself. */}
+      <motion.div
+        aria-hidden
+        data-autoreset
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 h-1.5 origin-left"
+        style={{ backgroundColor: ink, opacity: 0.55 }}
+        initial={{ scaleX: 1 }}
+        animate={{ scaleX: 0 }}
+        transition={{ duration: AUTO_RESET_MS / 1000, ease: "linear" }}
+      />
+
       {/* Continuous motion: diagonal marquee rows scrolling in opposite directions, forever.
           A paused video or a screenshot freezes instantly — a live app never stops moving. */}
       <div aria-hidden className="pointer-events-none absolute inset-[-40%] flex -rotate-[18deg] flex-col justify-center gap-6 opacity-[0.13]">
