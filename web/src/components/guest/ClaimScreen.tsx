@@ -2,11 +2,11 @@
 
 import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button, ErrorNote, H1, Kicker, Pill, Shell } from "@/components/ui";
-import { ApiError, invalidateOnchain, useApi } from "@/lib/api";
-import { sendClaim, type GuestSmartAccount } from "@/lib/aa";
-import type { ClaimVoucher, PublicEvent } from "@/lib/types";
+import Link from "next/link";
+import { guestBackend, type GuestWallet } from "@/lib/backend";
+import { DEMO } from "@/lib/mode";
+import type { PublicEvent } from "@/lib/types";
 
 const PIN_LEN = 4;
 
@@ -21,47 +21,43 @@ export function ClaimScreen({
   event,
   guestName,
   checkedIn,
-  smartAccount,
+  wallet,
   resume = false,
+  onBusyChange,
 }: {
   event: PublicEvent;
   guestName: string;
   checkedIn: boolean;
-  smartAccount: GuestSmartAccount | null;
+  wallet: GuestWallet;
   /** Voucher was issued earlier but the mint never landed (e.g. tab closed mid-claim). */
   resume?: boolean;
+  /** Lets the parent keep this screen mounted until the mint + celebration finish. */
+  onBusyChange?: (busy: boolean) => void;
 }) {
-  const api = useApi();
-  const qc = useQueryClient();
+  const claimTickets = guestBackend.useClaim(event.id, wallet);
+  const afterClaim = guestBackend.useAfterClaim(event.id);
   const [pin, setPin] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function claim() {
-    if (!smartAccount) return;
+    if (!wallet.ready) return;
     setErr(null);
-    setPhase("verifying");
+    onBusyChange?.(true);
     try {
-      const { voucher } = await api<{ voucher: ClaimVoucher }>(`/api/events/${event.id}/claim`, {
-        json: { pin, smartAccount: smartAccount.address },
-      });
-      setPhase("minting");
-      const { receipt } = await sendClaim(smartAccount, voucher);
-      await receipt;
+      await claimTickets(pin, (p) => setPhase(p));
       setPhase("done");
       navigator.vibrate?.([30, 40, 30]);
       setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["me", event.id] });
-        invalidateOnchain(qc);
+        afterClaim();
+        onBusyChange?.(false);
       }, 1400);
     } catch (e) {
       setPhase("idle");
       setPin("");
-      if (e instanceof ApiError) setErr(e.message);
-      else if (e instanceof Error && /VoucherAlreadyUsed/.test(e.message)) {
-        invalidateOnchain(qc);
-      } else setErr("Couldn't mint your tickets. Try again in a sec.");
+      setErr(e instanceof Error ? e.message : "Something went wrong.");
+      onBusyChange?.(false);
       inputRef.current?.focus();
     }
   }
@@ -130,16 +126,34 @@ export function ClaimScreen({
               <Button
                 type="submit"
                 loading={phase !== "idle"}
-                disabled={!checkedIn || pin.length < PIN_LEN || !smartAccount}
+                disabled={!checkedIn || pin.length < PIN_LEN || !wallet.ready}
               >
                 {checkedIn ? "Claim my tickets" : "Waiting for check-in…"}
               </Button>
               {phase !== "idle" && (
                 <p className="text-center font-mono text-xs uppercase tracking-widest text-mute">
-                  {phase === "verifying" ? "Verifying PIN + check-in…" : "Minting on Avalanche · gas is on us"}
+                  {phase === "verifying" ? "Verifying PIN + check-in…" : DEMO ? "Minting (simulated) · gas is on us" : "Minting on Avalanche · gas is on us"}
                 </p>
               )}
               <ErrorNote>{err}</ErrorNote>
+              {DEMO && !checkedIn && (
+                <p className="text-center font-mono text-[11px] uppercase tracking-widest text-cheese">
+                  Demo: open the{" "}
+                  <Link href={`/host/${event.id}`} target="_blank" className="underline">
+                    door list ↗
+                  </Link>{" "}
+                  and check yourself in — this screen unlocks live.
+                </p>
+              )}
+              {DEMO && checkedIn && (
+                <p className="text-center font-mono text-[11px] uppercase tracking-widest text-cheese">
+                  Demo: the PIN is on the{" "}
+                  <Link href={`/host/${event.id}?tab=settings`} target="_blank" className="underline">
+                    host settings ↗
+                  </Link>{" "}
+                  (default 4209)
+                </p>
+              )}
             </form>
           </motion.div>
         )}

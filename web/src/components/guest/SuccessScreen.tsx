@@ -30,6 +30,7 @@ export function SuccessScreen({
   voidReason,
   burn,
   onDone,
+  badge,
 }: {
   theme: ResolvedTheme;
   ticket: TicketType;
@@ -39,6 +40,8 @@ export function SuccessScreen({
   voidReason?: string;
   burn: BurnState | null;
   onDone: () => void;
+  /** e.g. "Host vouch" — shown when staff redeem on a guest's behalf. */
+  badge?: string;
 }) {
   const burst = useMemo(
     () =>
@@ -59,16 +62,33 @@ export function SuccessScreen({
       transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
       role="status"
     >
-      {/* Moving stripes: a live, animated surface is much harder to fake with a still image. */}
-      <motion.div
+      {/* Continuous motion: diagonal marquee rows scrolling in opposite directions, forever.
+          A paused video or a screenshot freezes instantly — a live app never stops moving. */}
+      <div aria-hidden className="pointer-events-none absolute inset-[-40%] flex -rotate-[18deg] flex-col justify-center gap-6 opacity-[0.13]">
+        {Array.from({ length: 9 }, (_, row) => (
+          <motion.div
+            key={row}
+            className="flex w-max whitespace-nowrap font-display text-6xl uppercase leading-none"
+            style={{ color: theme.ink }}
+            animate={{ x: row % 2 ? ["-50%", "0%"] : ["0%", "-50%"] }}
+            transition={{ repeat: Infinity, ease: "linear", duration: 9 + (row % 3) * 2 }}
+          >
+            {Array.from({ length: 2 }, (_, half) => (
+              <span key={half} className="pr-8">
+                {Array.from({ length: 6 }, () => `Redeemed ✦ ${theme.name} ✦ rsv.pizza ✦ `).join("")}
+              </span>
+            ))}
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Rhythmic pulse: a soft ring breathes out from the check mark every 1.4 s. */}
+      <motion.span
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.12]"
-        style={{
-          backgroundImage: `repeating-linear-gradient(-45deg, ${theme.ink} 0 2px, transparent 2px 22px)`,
-          backgroundSize: "62px 62px",
-        }}
-        animate={{ backgroundPosition: ["0px 0px", "62px 62px"] }}
-        transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+        className="pointer-events-none absolute left-1/2 top-[34%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full border-[10px]"
+        style={{ borderColor: theme.ink }}
+        animate={{ scale: [0.6, 2.4], opacity: [0.35, 0] }}
+        transition={{ repeat: Infinity, duration: 1.4, ease: "easeOut" }}
       />
 
       {/* Shock rings */}
@@ -100,14 +120,21 @@ export function SuccessScreen({
 
       <div className="relative flex flex-1 flex-col items-center justify-between px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] text-center">
         <div className="flex w-full items-center justify-between font-mono text-xs font-bold uppercase tracking-[0.2em]">
-          <span>rsv.pizza</span>
+          <span className="flex items-center gap-2">
+            rsv.pizza
+            {badge && (
+              <span className="px-2 py-0.5" style={{ backgroundColor: theme.ink, color: theme.hex }}>
+                {badge}
+              </span>
+            )}
+          </span>
           <button onClick={onDone} className="border-2 px-3 py-1" style={{ borderColor: theme.ink }}>
             Done
           </button>
         </div>
 
         <div className="flex flex-col items-center gap-3">
-          <motion.svg viewBox="0 0 100 100" className="h-28 w-28" initial={{ scale: 0.3, rotate: -20 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 300, damping: 12 }}>
+          <motion.svg viewBox="0 0 100 100" className="h-20 w-20" initial={{ scale: 0.3, rotate: -20 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 300, damping: 12 }}>
             <circle cx="50" cy="50" r="46" fill="none" stroke={theme.ink} strokeWidth="8" />
             <motion.path
               d="M28 52 L44 67 L73 35"
@@ -141,7 +168,8 @@ export function SuccessScreen({
         </div>
 
         <div className="flex w-full flex-col items-center gap-4">
-          <LiveClock className="text-[17vw] sm:text-7xl" />
+          {/* Date defeats recordings from previous nights; ticking seconds defeat screenshots. */}
+          <LiveClock showDate className="text-[17vw] sm:text-7xl" dateClassName="text-[9vw] sm:text-4xl" />
           <div className="w-full border-[3px] px-4 py-2" style={{ borderColor: theme.ink }}>
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.3em] opacity-70">Tonight&apos;s color</p>
             <p className="font-display text-2xl uppercase">{theme.name}</p>
@@ -161,6 +189,7 @@ function BurnChip({ burn, verdict }: { burn: BurnState | null; verdict: Verdict 
   if (!burn || burn.phase === "submitting") return <p className={base}>⛓ burning ticket on Avalanche…</p>;
   if (burn.phase === "pending") return <p className={base}>⛓ confirming · gas sponsored</p>;
   if (burn.phase === "queued") return <p className={base}>⛓ queued · will retry</p>;
+  if (burn.simulated) return <p className={base}>✓ burned on-chain (simulated) · {burn.txHash.slice(0, 10)}…</p>;
   return (
     <a href={explorerTx(burn.txHash)} target="_blank" rel="noreferrer" className={`${base} underline`}>
       ✓ burned on-chain · {burn.txHash.slice(0, 10)}…

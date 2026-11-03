@@ -7,7 +7,7 @@ import { RedeemScreen } from "@/components/guest/RedeemScreen";
 export function Redeem({ eventId, tokenId }: { eventId: string; tokenId: number }) {
   return (
     <GuestGate eventId={eventId}>
-      {({ me, smartAccount }) => {
+      {({ me, wallet }) => {
         const ticket = me.event.ticketTypes.find((t) => t.tokenId === tokenId);
         if (!ticket) notFound();
         return (
@@ -16,7 +16,7 @@ export function Redeem({ eventId, tokenId }: { eventId: string; tokenId: number 
             ticket={ticket}
             remaining={me.status.remaining[tokenId] ?? 0}
             guestName={me.status.name}
-            smartAccount={smartAccount}
+            wallet={wallet}
           />
         );
       }}

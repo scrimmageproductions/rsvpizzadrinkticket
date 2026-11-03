@@ -9,7 +9,7 @@ import { invalidateOnchain, useApi } from "@/lib/api";
 export type BurnState =
   | { phase: "submitting" }
   | { phase: "pending"; userOpHash: `0x${string}` }
-  | { phase: "confirmed"; txHash: `0x${string}` }
+  | { phase: "confirmed"; txHash: `0x${string}`; simulated?: boolean }
   | { phase: "queued"; error: string };
 
 /**

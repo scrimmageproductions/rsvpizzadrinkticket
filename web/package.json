@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "abi": "node scripts/gen-abi.mjs",
-    "verify:voucher": "NODE_OPTIONS=--conditions=react-server tsx scripts/verify-voucher.ts"
+    "verify:voucher": "NODE_OPTIONS=--conditions=react-server tsx scripts/verify-voucher.ts",
+    "admin:address": "tsx scripts/admin-address.ts",
+    "demo": "NEXT_PUBLIC_DEMO_MODE=true next dev"
   },
   "dependencies": {
     "@privy-io/node": "^0.37.0",

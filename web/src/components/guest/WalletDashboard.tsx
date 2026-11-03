@@ -2,8 +2,8 @@
 
 import { H1, Kicker, Pill, Shell } from "@/components/ui";
 import { TicketCard } from "./TicketCard";
-import { useDrainBurnQueue } from "@/hooks/useBurn";
-import type { GuestSmartAccount } from "@/lib/aa";
+import { guestBackend, type GuestWallet } from "@/lib/backend";
+import { DEMO } from "@/lib/mode";
 import type { PublicEvent } from "@/lib/types";
 
 /**
@@ -16,24 +16,24 @@ export function WalletDashboard({
   guestName,
   remaining,
   onchainTotal,
-  smartAccount,
+  wallet,
 }: {
   event: PublicEvent;
   guestName: string;
   remaining: Record<string, number>;
   onchainTotal: number | undefined;
-  smartAccount: GuestSmartAccount | null;
+  wallet: GuestWallet;
 }) {
-  useDrainBurnQueue(smartAccount, event.id);
+  guestBackend.useBackgroundSync(event.id, wallet);
 
   const total = Object.values(remaining).reduce((a, b) => a + b, 0);
-  const synced = onchainTotal !== undefined && onchainTotal === total;
+  const synced = DEMO || (onchainTotal !== undefined && onchainTotal === total);
 
   return (
     <Shell
       right={
         <Pill tone={synced ? "ok" : "warn"}>
-          {onchainTotal === undefined ? "● loading chain" : synced ? "● on-chain" : "● syncing"}
+          {DEMO ? "● demo chain" : onchainTotal === undefined ? "● loading chain" : synced ? "● on-chain" : "● syncing"}
         </Pill>
       }
     >

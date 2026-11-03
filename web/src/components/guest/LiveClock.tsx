@@ -5,11 +5,15 @@ import { useEffect, useState } from "react";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
+/** "FRI, OCT 27" */
+export const shortDate = (d: Date) =>
+  d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }).toUpperCase();
+
 /**
- * Ticking HH:MM:SS. A static screenshot / pre-recorded video of a success screen is
- * immediately obvious to a bartender because the seconds don't match the real time.
+ * Ticking HH:MM:SS plus today's date. Seconds that don't match the bar's clock expose a
+ * screenshot; a date that isn't today exposes a recording made on a previous night.
  */
-export function LiveClock({ className = "" }: { className?: string }) {
+export function LiveClock({ className = "", showDate = false, dateClassName = "" }: { className?: string; showDate?: boolean; dateClassName?: string }) {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     const tick = () => setNow(new Date());
@@ -22,15 +26,12 @@ export function LiveClock({ className = "" }: { className?: string }) {
   }, []);
   if (!now) return null;
 
-  const hh = pad(now.getHours());
-  const mm = pad(now.getMinutes());
   const ss = pad(now.getSeconds());
-
-  return (
+  const clock = (
     <div className={`flex items-baseline font-mono font-bold tabular-nums leading-none ${className}`} aria-live="off">
-      <span>{hh}</span>
+      <span>{pad(now.getHours())}</span>
       <Colon />
-      <span>{mm}</span>
+      <span>{pad(now.getMinutes())}</span>
       <Colon />
       <span className="relative inline-flex overflow-hidden">
         <AnimatePresence mode="popLayout" initial={false}>
@@ -45,6 +46,13 @@ export function LiveClock({ className = "" }: { className?: string }) {
           </motion.span>
         </AnimatePresence>
       </span>
+    </div>
+  );
+  if (!showDate) return clock;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <p className={`font-display uppercase leading-none tracking-tight ${dateClassName}`}>{shortDate(now)}</p>
+      {clock}
     </div>
   );
 }

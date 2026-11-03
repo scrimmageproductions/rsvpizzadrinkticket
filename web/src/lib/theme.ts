@@ -7,18 +7,40 @@
  * the check as soon as the color rotates.
  */
 
-export type ThemeKey = keyof typeof PALETTE;
+/**
+ * Pick stark black or stark white text for any background, whichever has the higher WCAG
+ * contrast ratio. Used for every surface whose color can change (theme colors, the REDEEM
+ * button's base and fill), so text stays legible in a dark, loud bar.
+ */
+export function readableInk(hex: string): "#000000" | "#FFFFFF" {
+  const m = hex.replace("#", "");
+  const full = m.length === 3 ? m.replace(/./g, (c) => c + c) : m;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(full.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const vsBlack = (L + 0.05) / 0.05;
+  const vsWhite = 1.05 / (L + 0.05);
+  return vsBlack >= vsWhite ? "#000000" : "#FFFFFF";
+}
 
-export const PALETTE = {
-  "neon-green": { name: "Neon Green", hex: "#39FF14", ink: "#000000" },
-  "hot-pink": { name: "Hot Pink", hex: "#FF2E88", ink: "#000000" },
-  "electric-blue": { name: "Electric Blue", hex: "#1F51FF", ink: "#FFFFFF" },
-  "safety-orange": { name: "Safety Orange", hex: "#FF6A00", ink: "#000000" },
-  "ultra-violet": { name: "Ultra Violet", hex: "#8F00FF", ink: "#FFFFFF" },
-  "cyber-yellow": { name: "Cyber Yellow", hex: "#FFE600", ink: "#000000" },
-  "aqua-mint": { name: "Aqua Mint", hex: "#00FFD1", ink: "#000000" },
-  "blood-red": { name: "Blood Red", hex: "#E10600", ink: "#FFFFFF" },
+const BASE = {
+  "neon-green": { name: "Neon Green", hex: "#39FF14" },
+  "hot-pink": { name: "Hot Pink", hex: "#FF2E88" },
+  "electric-blue": { name: "Electric Blue", hex: "#1F51FF" },
+  "safety-orange": { name: "Safety Orange", hex: "#FF6A00" },
+  "ultra-violet": { name: "Ultra Violet", hex: "#8F00FF" },
+  "cyber-yellow": { name: "Cyber Yellow", hex: "#FFE600" },
+  "aqua-mint": { name: "Aqua Mint", hex: "#00FFD1" },
+  "blood-red": { name: "Blood Red", hex: "#E10600" },
 } as const;
+
+export type ThemeKey = keyof typeof BASE;
+
+export const PALETTE = Object.fromEntries(
+  Object.entries(BASE).map(([k, v]) => [k, { ...v, ink: readableInk(v.hex) }]),
+) as Record<ThemeKey, { name: string; hex: string; ink: "#000000" | "#FFFFFF" }>;
 
 export const THEME_KEYS = Object.keys(PALETTE) as ThemeKey[];
 

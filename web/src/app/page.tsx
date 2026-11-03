@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui";
+import { DEMO } from "@/lib/mode";
 
 const personas = [
   {
@@ -11,20 +12,20 @@ const personas = [
   {
     who: "Door staff",
     what: "Finds the name, taps CHECK IN. That's the first of two locks on minting.",
-    href: "/host/pizza-night-nyc",
+    href: "/host/pizza-night-nyc?tab=door",
     cta: "Open door list",
   },
   {
     who: "Bartender",
-    what: "Taps the giant REDEEM button. Screen floods with tonight's color + a live clock? Pour.",
-    href: "/demo",
-    cta: "Try the tap (demo)",
+    what: "Holds the giant REDEEM button for 1.5s. Screen floods with tonight's color, today's date and a live clock? Pour.",
+    href: "/e/pizza-night-nyc",
+    cta: "Use a guest phone",
   },
   {
     who: "Host",
-    what: "Sets the Event PIN and the Theme Color of the Night — or lets it auto-rotate.",
-    href: "/host/pizza-night-nyc",
-    cta: "Open settings",
+    what: "Sets the PIN and the Theme Color of the Night. Vouches for dead phones, moves tickets to a wingman, exports the bar tab.",
+    href: "/host/pizza-night-nyc?tab=ledger",
+    cta: "Open host dashboard",
   },
 ];
 
@@ -65,6 +66,13 @@ export default function Home() {
           </Link>
         ))}
       </section>
+
+      {DEMO && (
+        <p className="mt-8 border-2 border-dashed border-cheese p-4 font-mono text-xs uppercase leading-relaxed tracking-widest text-cheese">
+          Demo Mode: everything runs in this browser on mock data — no keys needed. Open the guest app and the host
+          dashboard in two tabs side by side; they stay in sync. Event PIN: 4209.
+        </p>
+      )}
 
       <footer className="mt-16 border-t-2 border-line pt-6 font-mono text-xs uppercase tracking-widest text-mute">
         ERC-1155 soulbound perks · Avalanche C-Chain · ERC-4337 gasless · built for rsv.pizza

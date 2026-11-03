@@ -2,7 +2,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const KEEP = new Set([
-  "claimTickets", "claimTicketsBatch", "redeemTicket", "balanceOf", "balanceOfBatch", "claimUsed",
+  "claimTickets", "claimTicketsBatch", "redeemTicket", "adminRedeem", "adminTransfer",
+  "AdminRedeemed", "AdminTransferred", "InvalidRecipient", "balanceOf", "balanceOfBatch", "claimUsed",
   "TicketsClaimed", "TicketRedeemed", "Soulbound", "ApprovalsDisabled", "VoucherExpired",
   "VoucherAlreadyUsed", "InvalidSignature", "NotTokenOwner", "ZeroAmount",
   "ERC1155InsufficientBalance", "EnforcedPause",

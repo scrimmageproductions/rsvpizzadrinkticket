@@ -57,21 +57,54 @@ export async function findRsvp(eventId: string, me: Identity): Promise<RsvpRow |
   return (upd.data as RsvpRow) ?? null;
 }
 
-export async function remainingFor(event: EventRow, rsvp: RsvpRow): Promise<Record<string, number>> {
-  const out: Record<string, number> = {};
-  if (!rsvp.claimed_at) return out;
-  const { data, error } = await db()
-    .from("redemptions")
-    .select("token_id, amount")
-    .eq("rsvp_id", rsvp.id);
-  if (error) throw error;
-  for (const t of event.ticket_types) {
-    const used = (data ?? [])
-      .filter((r) => Number(r.token_id) === t.tokenId)
-      .reduce((s, r) => s + r.amount, 0);
-    out[t.tokenId] = Math.max(0, t.amount - used);
+export type Ledger = {
+  remaining: Record<string, number>;
+  minted: number;
+  redeemedByGuest: number;
+  redeemedByAdmin: number;
+  transferredIn: number;
+  transferredOut: number;
+};
+
+/**
+ * Off-chain ledger per RSVP: minted (on claim) + transfers in − transfers out − redemptions
+ * (guest + admin). Mirrors SQL `ticket_balance()`; this version batches a whole event.
+ */
+export async function ledgersFor(event: EventRow, rsvps: RsvpRow[]): Promise<Map<string, Ledger>> {
+  const ids = rsvps.map((r) => r.id);
+  const out = new Map<string, Ledger>();
+  if (!ids.length) return out;
+  const [red, tr] = await Promise.all([
+    db().from("redemptions").select("rsvp_id, token_id, amount, source").eq("event_id", event.id).in("rsvp_id", ids),
+    db().from("transfers").select("from_rsvp_id, to_rsvp_id, token_id, amount").eq("event_id", event.id),
+  ]);
+  if (red.error) throw red.error;
+  if (tr.error) throw tr.error;
+
+  for (const r of rsvps) {
+    const l: Ledger = { remaining: {}, minted: 0, redeemedByGuest: 0, redeemedByAdmin: 0, transferredIn: 0, transferredOut: 0 };
+    for (const t of event.ticket_types) {
+      const minted = r.claimed_at ? t.amount : 0;
+      const mine = (red.data ?? []).filter((x) => x.rsvp_id === r.id && Number(x.token_id) === t.tokenId);
+      const byGuest = mine.filter((x) => x.source !== "admin").reduce((a, x) => a + x.amount, 0);
+      const byAdmin = mine.filter((x) => x.source === "admin").reduce((a, x) => a + x.amount, 0);
+      const tin = (tr.data ?? []).filter((x) => x.to_rsvp_id === r.id && Number(x.token_id) === t.tokenId).reduce((a, x) => a + x.amount, 0);
+      const tout = (tr.data ?? []).filter((x) => x.from_rsvp_id === r.id && Number(x.token_id) === t.tokenId).reduce((a, x) => a + x.amount, 0);
+      l.remaining[t.tokenId] = Math.max(0, minted + tin - tout - byGuest - byAdmin);
+      l.minted += minted;
+      l.redeemedByGuest += byGuest;
+      l.redeemedByAdmin += byAdmin;
+      l.transferredIn += tin;
+      l.transferredOut += tout;
+    }
+    out.set(r.id, l);
   }
   return out;
+}
+
+export async function remainingFor(event: EventRow, rsvp: RsvpRow): Promise<Record<string, number>> {
+  if (!rsvp.claimed_at) return {};
+  return (await ledgersFor(event, [rsvp])).get(rsvp.id)!.remaining;
 }
 
 export async function guestStatus(event: EventRow, rsvp: RsvpRow | null): Promise<GuestStatus> {

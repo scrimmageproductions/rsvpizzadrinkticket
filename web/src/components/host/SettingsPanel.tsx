@@ -1,20 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button, ErrorNote, Kicker } from "@/components/ui";
 import { ThemeCountdown } from "./ThemeCountdown";
-import { ApiError, useApi } from "@/lib/api";
 import { PALETTE, THEME_KEYS, type ThemeKey } from "@/lib/theme";
-import type { SettingsResponse } from "@/hooks/useHost";
+import { hostBackend, type HostSettingsData } from "@/lib/backend";
 import type { HostSettings } from "@/lib/types";
 
 /**
- * HOST / ADMIN — Event PIN + Visual 2FA control.
+ * HOST / ADMIN — Event PIN + Visual 2FA control. Staff-only (rendered inside HostGate);
+ * this is the ONLY place the Theme Color can be picked or previewed before a redemption.
  */
-export function SettingsPanel({ eventId, data }: { eventId: string; data: SettingsResponse }) {
-  const api = useApi();
-  const qc = useQueryClient();
+export function SettingsPanel({ eventId, data }: { eventId: string; data: HostSettingsData }) {
+  const { saveSettings } = hostBackend.useHostActions(eventId);
   const [pin, setPin] = useState(data.settings.eventPin);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -24,17 +22,16 @@ export function SettingsPanel({ eventId, data }: { eventId: string; data: Settin
     setErr(null);
     setSaving(key);
     try {
-      await api(`/api/host/${eventId}/settings`, { method: "PATCH", json: patch });
-      await qc.invalidateQueries({ queryKey: ["host-settings", eventId] });
+      await saveSettings(patch);
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : "Save failed");
+      setErr(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(null);
     }
   }
 
   const togglePalette = (k: ThemeKey) => {
-    const next = s.themePalette.includes(k) ? s.themePalette.filter((x) => x !== k) : [...s.themePalette, k];
+    const next = s.themePalette.includes(k) ? s.themePalette.filter((x: string) => x !== k) : [...s.themePalette, k];
     if (next.length >= 2) save("palette", { themePalette: next });
   };
 

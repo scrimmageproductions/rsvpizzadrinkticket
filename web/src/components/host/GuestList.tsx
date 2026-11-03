@@ -2,45 +2,36 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useQueryClient } from "@tanstack/react-query";
-import { useApi } from "@/lib/api";
-import { useHostGuests } from "@/hooks/useHost";
+import { hostBackend } from "@/lib/backend";
 import type { HostGuest } from "@/lib/types";
 
 /**
  * DOOR STAFF — one job: find the name, tap CHECK IN. This is Layer 1 of the mint gate.
  */
 export function GuestList({ eventId }: { eventId: string }) {
-  const api = useApi();
-  const qc = useQueryClient();
-  const { data, isLoading } = useHostGuests(eventId);
+  const { data: list, isLoading } = hostBackend.useHostGuests(eventId);
+  const { setCheckedIn } = hostBackend.useHostActions(eventId);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
   const guests = useMemo(() => {
-    const all = data?.guests ?? [];
+    const all = list ?? [];
     const needle = q.trim().toLowerCase();
     return needle
       ? all.filter((g) => [g.name, g.email, g.phone].some((v) => v?.toLowerCase().includes(needle)))
       : all;
-  }, [data, q]);
+  }, [list, q]);
 
-  const total = data?.guests.length ?? 0;
-  const inside = data?.guests.filter((g) => g.status === "checked_in").length ?? 0;
-  const claimed = data?.guests.filter((g) => g.claimedAt).length ?? 0;
+  const total = list?.length ?? 0;
+  const inside = list?.filter((g) => g.status === "checked_in").length ?? 0;
+  const claimed = list?.filter((g) => g.claimedAt).length ?? 0;
 
   async function toggle(g: HostGuest) {
-    const next = g.status !== "checked_in";
     setBusy(g.id);
-    // optimistic
-    qc.setQueryData<{ guests: HostGuest[] }>(["host-guests", eventId], (d) =>
-      d && { guests: d.guests.map((x) => (x.id === g.id ? { ...x, status: next ? "checked_in" : "rsvpd" } : x)) },
-    );
     try {
-      await api(`/api/host/${eventId}/guests/${g.id}`, { method: "PATCH", json: { checkedIn: next } });
+      await setCheckedIn(g.id, g.status !== "checked_in");
     } finally {
       setBusy(null);
-      qc.invalidateQueries({ queryKey: ["host-guests", eventId] });
     }
   }
 

@@ -25,7 +25,7 @@ export const GET = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/se
     themePalette: e.theme_palette,
     rotationMinutes: e.rotation_minutes,
   };
-  return json({ eventName: e.name, settings, theme: resolveTheme(e), serverTime: Date.now() });
+  return json({ eventName: e.name, settings, theme: resolveTheme(e), ticketTypes: e.ticket_types, serverTime: Date.now() });
 });
 
 export const PATCH = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/settings">) => {

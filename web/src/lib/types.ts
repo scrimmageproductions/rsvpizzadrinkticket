@@ -46,7 +46,16 @@ export type HostGuest = {
   checkedInAt: string | null;
   claimedAt: string | null;
   walletAddress: string | null;
+  /** total redeemed (guest + admin) — kept for the door list */
   redeemed: number;
+  /** Master ledger — totals across all ticket types */
+  minted: number;
+  redeemedByGuest: number;
+  redeemedByAdmin: number;
+  transferredIn: number;
+  transferredOut: number;
+  /** tokenId → current balance (minted + in − out − redeemed) */
+  remaining: Record<string, number>;
 };
 
 export type HostSettings = {

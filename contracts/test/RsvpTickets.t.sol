@@ -261,4 +261,89 @@ contract RsvpTicketsTest is Test {
         );
         tickets.pause();
     }
+
+    // ───────────────────────── admin override
+
+    function test_adminRedeem_burnsWithoutGuestDevice() public {
+        _claimBundle();
+        vm.prank(admin);
+        tickets.adminRedeem(guest, DRINK, 1);
+        assertEq(tickets.balanceOf(guest, DRINK), 1);
+        assertEq(tickets.balanceOf(DEAD, DRINK), 1);
+    }
+
+    function test_adminRedeem_onlyAdminRole() public {
+        _claimBundle();
+        bytes32 role = tickets.ADMIN_ROLE();
+        vm.prank(friend);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, friend, role));
+        tickets.adminRedeem(guest, DRINK, 1);
+    }
+
+    function test_adminRedeem_cannotOverdraw() public {
+        _claimBundle();
+        vm.prank(admin);
+        vm.expectRevert(); // ERC1155InsufficientBalance
+        tickets.adminRedeem(guest, PIZZA, 2);
+    }
+
+    function test_adminTransfer_wingman() public {
+        _claimBundle();
+        vm.prank(admin);
+        tickets.adminTransfer(guest, friend, DRINK, 2);
+        assertEq(tickets.balanceOf(guest, DRINK), 0);
+        assertEq(tickets.balanceOf(friend, DRINK), 2);
+    }
+
+    function test_adminTransfer_onlyAdminRole() public {
+        _claimBundle();
+        bytes32 role = tickets.ADMIN_ROLE();
+        vm.prank(guest);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, guest, role));
+        tickets.adminTransfer(guest, friend, DRINK, 1);
+    }
+
+    function test_adminTransfer_rejectsBadRecipient() public {
+        _claimBundle();
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(RsvpTickets.InvalidRecipient.selector, DEAD));
+        tickets.adminTransfer(guest, DEAD, DRINK, 1);
+        vm.expectRevert(abi.encodeWithSelector(RsvpTickets.InvalidRecipient.selector, guest));
+        tickets.adminTransfer(guest, guest, DRINK, 1);
+        vm.stopPrank();
+    }
+
+    function test_adminTransfer_overrideDoesNotLeak() public {
+        _claimBundle();
+        vm.prank(admin);
+        tickets.adminTransfer(guest, friend, DRINK, 1);
+        // Same transaction context is over; soulbound is back in force for the recipient.
+        vm.prank(friend);
+        vm.expectRevert(RsvpTickets.Soulbound.selector);
+        tickets.safeTransferFrom(friend, guest, DRINK, 1, "");
+    }
+
+    function test_adminRole_revocable() public {
+        bytes32 role = tickets.ADMIN_ROLE();
+        address hostServer = makeAddr("host-server-smart-account");
+        vm.startPrank(admin);
+        tickets.grantRole(role, hostServer);
+        tickets.revokeRole(role, hostServer);
+        vm.stopPrank();
+        _claimBundle();
+        vm.prank(hostServer);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, hostServer, role));
+        tickets.adminRedeem(guest, DRINK, 1);
+    }
+
+    function test_adminActions_blockedWhenPaused() public {
+        _claimBundle();
+        vm.startPrank(admin);
+        tickets.pause();
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        tickets.adminTransfer(guest, friend, DRINK, 1);
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        tickets.adminRedeem(guest, DRINK, 1);
+        vm.stopPrank();
+    }
 }

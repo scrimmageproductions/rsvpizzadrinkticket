@@ -16,8 +16,9 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 ///         ("Dual-Layer Gated Minting".)
 ///
 ///         Tokens are soulbound: they can be minted, and they can be redeemed (sent to 0x…dEaD),
-///         but they can never be moved between wallets, so guests cannot forward drinks to friends
-///         who are not at the event.
+///         but guests can never move them between wallets, so they cannot forward drinks to friends
+///         who are not at the event. The single exception is ADMIN_ROLE (the host), which can
+///         re-home tickets between two guests who are both at the venue when a phone dies.
 ///
 ///         Redemption is called by the guest's own ERC-4337 smart account, so a Paymaster can
 ///         sponsor the gas and the whole flow is gasless for the guest.
@@ -34,6 +35,11 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
     /// @notice Role allowed to pause and to update metadata.
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
+    /// @notice Host override role (the rsv.pizza backend's admin smart account). Handles the
+    ///         "phone died" edge cases: burn on a guest's behalf (Host Vouch) and move tickets to
+    ///         another guest (Wingman Transfer). It is the ONLY path around the soulbound rule.
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
     bytes32 public constant CLAIM_TYPEHASH =
         keccak256("Claim(address to,uint256 id,uint256 amount,bytes32 claimId,uint256 deadline)");
 
@@ -41,6 +47,10 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
         keccak256("ClaimBatch(address to,uint256[] ids,uint256[] amounts,bytes32 claimId,uint256 deadline)");
 
     // ───────────────────────────────────────────── storage
+
+    /// @dev Set only for the duration of an ADMIN_ROLE call so `_update` lets the move through.
+    ///      Transient (EIP-1153): automatically cleared at the end of the transaction.
+    bool private transient _adminOverride;
 
     /// @notice claimId => already used. A claimId is derived by the backend from (eventId, rsvpId),
     ///         so each RSVP can mint exactly once no matter how many times a voucher is re-issued.
@@ -50,6 +60,10 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
 
     event TicketsClaimed(address indexed to, bytes32 indexed claimId, uint256[] ids, uint256[] amounts);
     event TicketRedeemed(address indexed account, uint256 indexed id, uint256 amount);
+    event AdminRedeemed(address indexed admin, address indexed account, uint256 indexed id, uint256 amount);
+    event AdminTransferred(
+        address indexed admin, address indexed from, address indexed to, uint256 id, uint256 amount
+    );
 
     error Soulbound();
     error ApprovalsDisabled();
@@ -58,6 +72,7 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
     error InvalidSignature();
     error NotTokenOwner(address caller, address account);
     error ZeroAmount();
+    error InvalidRecipient(address to);
 
     // ───────────────────────────────────────────── constructor
 
@@ -67,6 +82,7 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
     {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(OPERATOR_ROLE, admin);
+        _grantRole(ADMIN_ROLE, admin);
         _grantRole(SIGNER_ROLE, signer);
     }
 
@@ -143,16 +159,43 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
         emit TicketRedeemed(account, id, amount);
     }
 
+    // ───────────────────────────────────────────── admin override (dead phone / no signal)
+
+    /// @notice Host Vouch: burn a guest's ticket (to 0x…dEaD) without the guest's device.
+    function adminRedeem(address account, uint256 id, uint256 amount) external onlyRole(ADMIN_ROLE) whenNotPaused {
+        if (amount == 0) revert ZeroAmount();
+        _update(account, BURN_ADDRESS, _single(id), _single(amount));
+        emit TicketRedeemed(account, id, amount);
+        emit AdminRedeemed(msg.sender, account, id, amount);
+    }
+
+    /// @notice Wingman Transfer: move a guest's tickets to another guest's wallet.
+    ///         The backend only calls this for two checked-in guests at the same event.
+    function adminTransfer(address from, address to, uint256 id, uint256 amount)
+        external
+        onlyRole(ADMIN_ROLE)
+        whenNotPaused
+    {
+        if (amount == 0) revert ZeroAmount();
+        if (to == address(0) || to == BURN_ADDRESS || to == from) revert InvalidRecipient(to);
+        _adminOverride = true;
+        // `_update` rather than `_safeTransferFrom`: no operator approval exists (approvals are
+        // disabled) and guest smart accounts accept ERC-1155 anyway.
+        _update(from, to, _single(id), _single(amount));
+        _adminOverride = false;
+        emit AdminTransferred(msg.sender, from, to, id, amount);
+    }
+
     // ───────────────────────────────────────────── soulbound enforcement
 
     /// @dev Single choke point for every balance change in OZ ERC-1155.
-    ///      Allowed: mint (from == 0), burn (to == 0), redeem (to == BURN_ADDRESS).
-    ///      Everything else — i.e. wallet-to-wallet transfers — reverts.
+    ///      Allowed: mint (from == 0), burn (to == 0), redeem (to == BURN_ADDRESS), and a
+    ///      wallet-to-wallet move only inside `adminTransfer` (ADMIN_ROLE). Everything else reverts.
     function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
         internal
         override
     {
-        if (from != address(0) && to != address(0) && to != BURN_ADDRESS) revert Soulbound();
+        if (from != address(0) && to != address(0) && to != BURN_ADDRESS && !_adminOverride) revert Soulbound();
         super._update(from, to, ids, values);
     }
 
@@ -181,6 +224,11 @@ contract RsvpTickets is ERC1155, AccessControl, Pausable, EIP712 {
     }
 
     // ───────────────────────────────────────────── internals
+
+    function _single(uint256 v) private pure returns (uint256[] memory arr) {
+        arr = new uint256[](1);
+        arr[0] = v;
+    }
 
     function _consumeVoucher(bytes32 structHash, bytes32 claimId, uint256 deadline, bytes calldata signature)
         private

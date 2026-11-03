@@ -3,8 +3,10 @@
 import { PrivyProvider } from "@privy-io/react-auth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, createConfig, http } from "wagmi";
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { chain, rpcUrl } from "@/lib/chain";
+import { DEMO } from "@/lib/mode";
+import { DemoDock } from "@/components/DemoDock";
 
 /** Read-only wagmi config: on-chain balances for the guest's smart account. Writes go through ERC-4337. */
 const wagmiConfig = createConfig({
@@ -24,9 +26,17 @@ export function Providers({ children }: { children: ReactNode }) {
     </QueryClientProvider>
   );
 
-  // Without a Privy app id only the static pages and /demo work (handy for pitching / UI review).
-  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-  if (!appId) return inner;
+  // Demo Mode: no Privy at all — the mock backend handles "auth" (see lib/backend/demo.ts).
+  if (DEMO)
+    return (
+      <>
+        {inner}
+        <Suspense fallback={null}>
+          <DemoDock />
+        </Suspense>
+      </>
+    );
+  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID!;
 
   return (
     <PrivyProvider
