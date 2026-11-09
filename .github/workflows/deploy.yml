@@ -1,0 +1,102 @@
+# Build, test and deploy the rsvpizza Worker (Cloudflare Workers + D1) on every push to main.
+#
+# One-time setup (GitHub → repo → Settings → Secrets and variables → Actions):
+#   Secret   CLOUDFLARE_API_TOKEN   Cloudflare API token: "Edit Cloudflare Workers" template + D1:Edit
+# Optional repository variables (build-time, baked into the client bundle):
+#   NEXT_PUBLIC_PRIVY_APP_ID        leave unset → Demo Mode build
+#   NEXT_PUBLIC_CHAIN               base | baseSepolia (default baseSepolia)
+#   NEXT_PUBLIC_TICKETS_ADDRESS     RsvpTickets contract address
+#   NEXT_PUBLIC_APP_URL / NEXT_PUBLIC_RPC_URL / NEXT_PUBLIC_DEFAULT_EVENT_ID
+#   WORKER_URL                      health-check origin (default below)
+# Worker secrets (PRIVY_APP_SECRET, …) are set once in Cloudflare, not here: see web/.dev.vars.example.
+
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false # never cut a deploy off halfway
+
+permissions:
+  contents: read
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: a6123ca142fce93d72adaae34b29148f
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  WORKER_URL: ${{ vars.WORKER_URL || 'https://rsvpizza.youngscrimmagebeats.workers.dev' }}
+  NEXT_PUBLIC_PRIVY_APP_ID: ${{ vars.NEXT_PUBLIC_PRIVY_APP_ID }}
+  NEXT_PUBLIC_CHAIN: ${{ vars.NEXT_PUBLIC_CHAIN || 'baseSepolia' }}
+  NEXT_PUBLIC_TICKETS_ADDRESS: ${{ vars.NEXT_PUBLIC_TICKETS_ADDRESS }}
+  NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+  NEXT_PUBLIC_RPC_URL: ${{ vars.NEXT_PUBLIC_RPC_URL }}
+  NEXT_PUBLIC_DEFAULT_EVENT_ID: ${{ vars.NEXT_PUBLIC_DEFAULT_EVENT_ID || 'pizza-night-nyc' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # ── Gate: nothing reaches production unless these pass ──
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: D1 ledger tests (local D1, incl. double-spend races)
+        run: npm run test:db
+
+      - name: Skip deploy (no Cloudflare token yet)
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: |
+          echo "::notice title=Deploy skipped::Add the CLOUDFLARE_API_TOKEN repository secret, then re-run this workflow (Actions → Deploy to Cloudflare → Run workflow)."
+
+      - name: Mode
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          if [ -z "$NEXT_PUBLIC_PRIVY_APP_ID" ]; then
+            echo "::notice title=Demo Mode build::NEXT_PUBLIC_PRIVY_APP_ID is not set — deploying the Demo Mode app (API still uses the real D1)."
+          else
+            echo "Live build on $NEXT_PUBLIC_CHAIN"
+          fi
+
+      - name: Apply D1 migrations (production)
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npm run db:migrate
+
+      - name: Build & deploy Worker
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npm run deploy
+
+      - name: Health check (D1 through the live Worker)
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          url="$WORKER_URL/api/events/${NEXT_PUBLIC_DEFAULT_EVENT_ID}"
+          for i in 1 2 3 4 5 6; do
+            body=$(curl -fsS "$url" || true)
+            if echo "$body" | grep -q '"event"'; then
+              echo "✓ $url"
+              echo "$body" | head -c 300; echo
+              echo "::notice title=Live::$WORKER_URL"
+              exit 0
+            fi
+            echo "attempt $i: not ready yet"; sleep 10
+          done
+          echo "::error::Health check failed: $url"
+          exit 1

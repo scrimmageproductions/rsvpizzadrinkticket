@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Cloudflare / vinext build output and generated Worker types
+    ".cloudflare/**",
+    "dist/**",
+    ".vinext/**",
+    // local agent tooling (gitignored)
+    ".agents/**",
+    ".claude/**",
   ]),
 ]);
 
