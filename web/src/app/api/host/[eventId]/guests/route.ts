@@ -1,6 +1,6 @@
 import { handler, json } from "@/lib/server/http";
 import { requireHost } from "@/lib/server/auth";
-import { db, type RsvpRow } from "@/lib/server/supabase";
+import { listRsvps } from "@/lib/server/repo";
 import { ledgersFor, loadEvent } from "@/lib/server/guests";
 import type { HostGuest } from "@/lib/types";
 
@@ -10,11 +10,10 @@ export const GET = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/gu
   await requireHost(req);
 
   const event = await loadEvent(eventId);
-  const rsvps = await db().from("rsvps").select("*").eq("event_id", eventId).order("name");
-  if (rsvps.error) throw rsvps.error;
-  const ledgers = await ledgersFor(event, rsvps.data as RsvpRow[]);
+  const rsvps = await listRsvps(eventId);
+  const ledgers = await ledgersFor(event, rsvps);
 
-  const guests: HostGuest[] = (rsvps.data as RsvpRow[]).map((r) => {
+  const guests: HostGuest[] = rsvps.map((r) => {
     const l = ledgers.get(r.id)!;
     return {
       id: r.id,

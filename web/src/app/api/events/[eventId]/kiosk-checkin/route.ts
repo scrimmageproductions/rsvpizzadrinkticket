@@ -2,7 +2,7 @@ import { z } from "zod";
 import { handler, json } from "@/lib/server/http";
 import { HttpError, requireUser } from "@/lib/server/auth";
 import { findRsvp, loadEvent } from "@/lib/server/guests";
-import { db } from "@/lib/server/supabase";
+import { kioskCheckIn } from "@/lib/server/repo";
 import { signToken, verifyToken } from "@/lib/server/tokens";
 import { PRESENCE_TTL_MS, verifyKioskCode } from "@/lib/kiosk";
 
@@ -45,13 +45,6 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/events/[eventId]
   const rsvp = await findRsvp(eventId, me);
   if (!rsvp) throw new HttpError(403, "not_on_list", "We couldn't find your RSVP. Use the email or phone you RSVP'd with.");
 
-  if (rsvp.status !== "checked_in") {
-    const { error } = await db()
-      .from("rsvps")
-      .update({ status: "checked_in", checked_in_at: new Date().toISOString(), checked_in_by: "kiosk" })
-      .eq("id", rsvp.id)
-      .eq("status", "rsvpd");
-    if (error) throw error;
-  }
+  if (rsvp.status !== "checked_in") await kioskCheckIn(rsvp.id);
   return json({ checkedIn: true, name: rsvp.name });
 });

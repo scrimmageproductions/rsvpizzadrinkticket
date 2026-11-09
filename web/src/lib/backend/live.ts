@@ -57,7 +57,7 @@ export const liveGuest: GuestBackend = {
   usePublicEvent(eventId) {
     return useQuery({
       queryKey: ["event", eventId],
-      queryFn: async () => (await (await fetch(`/api/events/${eventId}`)).json()).event as PublicEvent,
+      queryFn: async () => ((await (await fetch(`/api/events/${eventId}`)).json()) as { event: PublicEvent }).event,
     }).data;
   },
 
@@ -147,7 +147,7 @@ export const liveGuest: GuestBackend = {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ code }),
         });
-        const body = await res.json().catch(() => ({}));
+        const body = (await res.json().catch(() => ({}))) as { presence?: string; message?: string };
         if (!res.ok || !body.presence) throw new Error(body.message ?? "That door code didn't work. Scan the screen again.");
         return body.presence as string;
       },
@@ -168,7 +168,12 @@ export const liveGuest: GuestBackend = {
     const resolveInvite = useCallback(
       async (token: string): Promise<InviteInfo> => {
         const res = await fetch(`/api/events/${eventId}/invite?token=${encodeURIComponent(token)}`);
-        const body = await res.json().catch(() => ({}));
+        const body = (await res.json().catch(() => ({}))) as {
+          name: string;
+          email: string | null;
+          phone: string | null;
+          message?: string;
+        };
         if (!res.ok) throw new Error(body.message ?? "This invite link is invalid or expired.");
         return { name: body.name, email: body.email, phone: body.phone, loggedIn: false };
       },

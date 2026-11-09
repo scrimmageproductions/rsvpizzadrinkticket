@@ -3,7 +3,8 @@ import { handler, json } from "@/lib/server/http";
 import { HttpError, requireHost } from "@/lib/server/auth";
 import { ticketChangeError, TicketTypesSchema } from "@/lib/tickets";
 import { loadEvent } from "@/lib/server/guests";
-import { db } from "@/lib/server/supabase";
+import { updateEvent, type EventPatch } from "@/lib/server/repo";
+import { tokensInUse } from "@/lib/server/ledger";
 import { isThemeKey, resolveTheme } from "@/lib/theme";
 import { randomSecretHex } from "@/lib/kiosk";
 import type { HostSettings } from "@/lib/types";
@@ -40,7 +41,7 @@ export const PATCH = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/
   await requireHost(req);
   const p = Patch.parse(await req.json());
 
-  const update: Record<string, unknown> = {};
+  const update: EventPatch = {};
   if (p.eventPin !== undefined) update.event_pin = p.eventPin.toUpperCase();
   if (p.themeMode !== undefined) update.theme_mode = p.themeMode;
   if (p.themeColor !== undefined) update.theme_color = p.themeColor;
@@ -65,21 +66,6 @@ export const PATCH = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/
     update.ticket_types = p.ticketTypes;
   }
 
-  const { error } = await db().from("events").update(update).eq("id", eventId);
-  if (error) throw error;
+  await updateEvent(eventId, update);
   return json({ theme: resolveTheme(await loadEvent(eventId)) });
 });
-
-/** Token ids any guest holds or has held: claimed bundles, grants, transfers. */
-async function tokensInUse(eventId: string): Promise<Set<number>> {
-  const [r, g, t] = await Promise.all([
-    db().from("rsvps").select("claimed_bundle").eq("event_id", eventId).not("claimed_at", "is", null),
-    db().from("grants").select("token_id").eq("event_id", eventId),
-    db().from("transfers").select("token_id").eq("event_id", eventId),
-  ]);
-  for (const x of [r, g, t]) if (x.error) throw x.error;
-  const used = new Set<number>();
-  for (const row of r.data ?? []) for (const b of (row.claimed_bundle ?? []) as { tokenId: number; amount: number }[]) if (b.amount > 0) used.add(Number(b.tokenId));
-  for (const row of [...(g.data ?? []), ...(t.data ?? [])]) used.add(Number(row.token_id));
-  return used;
-}

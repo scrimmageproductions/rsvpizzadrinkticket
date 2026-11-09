@@ -1,6 +1,6 @@
 import { handler, json } from "@/lib/server/http";
 import { HttpError } from "@/lib/server/auth";
-import { db } from "@/lib/server/supabase";
+import { getRsvpContact } from "@/lib/server/repo";
 import { verifyToken } from "@/lib/server/tokens";
 
 /**
@@ -14,9 +14,7 @@ export const GET = handler(async (req, ctx: RouteContext<"/api/events/[eventId]/
   const p = verifyToken(token, "invite", eventId);
   if (!p || typeof p.r !== "string") throw new HttpError(403, "invite_invalid", "This invite link is invalid or expired.");
 
-  const { data, error } = await db()
-    .from("rsvps").select("name, email, phone").eq("id", p.r).eq("event_id", eventId).maybeSingle();
-  if (error) throw error;
+  const data = await getRsvpContact(eventId, p.r);
   if (!data) throw new HttpError(404, "invite_invalid", "This invite link is invalid or expired.");
   return json({ name: data.name, email: data.email, phone: data.phone });
 });

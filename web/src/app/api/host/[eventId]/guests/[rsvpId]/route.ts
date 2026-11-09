@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { handler, json } from "@/lib/server/http";
 import { HttpError, requireHost } from "@/lib/server/auth";
-import { db } from "@/lib/server/supabase";
+import { setCheckIn } from "@/lib/server/repo";
 
 const Body = z.object({ checkedIn: z.boolean() });
 
@@ -11,18 +11,7 @@ export const PATCH = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/
   const staff = await requireHost(req);
   const { checkedIn } = Body.parse(await req.json());
 
-  const { data, error } = await db()
-    .from("rsvps")
-    .update(
-      checkedIn
-        ? { status: "checked_in", checked_in_at: new Date().toISOString(), checked_in_by: staff.emails[0] }
-        : { status: "rsvpd", checked_in_at: null, checked_in_by: null },
-    )
-    .eq("id", rsvpId)
-    .eq("event_id", eventId)
-    .select("id, status, checked_in_at")
-    .maybeSingle();
-  if (error) throw error;
+  const data = await setCheckIn(eventId, rsvpId, checkedIn, staff.emails[0] ?? staff.userId);
   if (!data) throw new HttpError(404, "rsvp_not_found");
   return json({ guest: data });
 });

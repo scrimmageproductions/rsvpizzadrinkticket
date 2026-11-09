@@ -6,7 +6,7 @@ Integration MVP for [rsv.pizza](https://rsv.pizza):
 
 ```
 contracts/   Foundry · Solidity 0.8.28 · OpenZeppelin 5.4 — RsvpTickets (ERC-1155, soulbound, EIP-712 gated mint)
-web/         Next.js 16 (App Router) · React 19 · Tailwind 4 · Framer Motion · wagmi/viem · Privy · permissionless.js (ERC-4337) · Supabase
+web/         Next.js 16 App Router on Cloudflare Workers (vinext) · React 19 · Tailwind 4 · Framer Motion · wagmi/viem · Privy · permissionless.js (ERC-4337) · Cloudflare D1
 ```
 
 **Try the whole journey without any keys (Demo Mode):**
@@ -71,7 +71,7 @@ Code: [`web/src/lib/aa.ts`](web/src/lib/aa.ts), [`web/src/hooks/useSmartAccount.
 
 ```
 tap ─┬─▶ same frame   Success screen in the Theme Color already cached by the 4s /me poll   (no network)
-     ├─▶ ~100 ms      POST /redemptions → Postgres record_redemption() (advisory-locked)    → VOID overlay on 409
+     ├─▶ ~100 ms      POST /redemptions → atomic D1 check-and-insert (one statement)         → VOID overlay on 409
      └─▶ ~1–2 s       gasless redeemTicket UserOp (only if the ledger said OK)              → chip: "burned on-chain"
                       failures persist in localStorage and are retried; never re-sent once the bundler accepted it
 ```
@@ -127,7 +127,7 @@ On when `NEXT_PUBLIC_DEMO_MODE=true` or `NEXT_PUBLIC_PRIVY_APP_ID` is empty. The
 | Guest learning tonight's color in advance | The color picker, preview and bar display exist only behind staff login. The REDEEM button is always brand tomato, never the theme color. |
 | Admin key compromise | `ADMIN_ROLE` is separate from deployer/signer roles, only used server-side after a staff login, every action logged with the staff email; revocable; `pause()` stops it. |
 | Look-alike page built by someone without tickets | Needs tonight's color, which is only served to claimed ticket holders, and rotates. |
-| Same account on two phones redeeming the last drink | Atomic Postgres ledger (`record_redemption`, advisory lock) → second phone flips to **VOID** in ~100 ms. |
+| Same account on two phones redeeming the last drink | Atomic D1 ledger: one `INSERT … SELECT … WHERE balance >= n` statement (D1 runs statements serially), so the second phone flips to **VOID** in ~100 ms. Tested with 10 parallel redemptions for 1 drink (exactly 1 wins). |
 | Paymaster drain | `/api/aa` requires a Privy session and only sponsors UserOps whose every call targets `RsvpTickets` with value 0; plus Pimlico sponsorship policy. |
 
 Honest limits (fine for an MVP, worth saying in the pitch): Visual 2FA is a *speed bump* against a determined insider who holds a ticket and builds a fake app — a claimed guest's browser does prefetch the current color (that is what makes the success screen instant), so it's readable from dev tools; the on-chain burn lags the pour by ~1–2 s by design; the PIN lockout counter is per-RSVP, not per-IP.
@@ -146,9 +146,18 @@ forge test
 
 Deploy to Base Sepolia (see [`contracts/README.md`](contracts/README.md)) with `SIGNER_ADDRESS` = the address of the key you'll put in `CLAIM_SIGNER_PRIVATE_KEY`. Set `NEXT_PUBLIC_CHAIN=baseSepolia` (or `base`) to match. The EIP-712 domain is bound to `block.chainid`, so a mismatch makes every claim fail.
 
-### 2. Supabase
+### 2. Cloudflare D1 (database)
 
-Run [`web/supabase/migrations/0001_init.sql`](web/supabase/migrations/0001_init.sql), [`0002_admin_override.sql`](web/supabase/migrations/0002_admin_override.sql) and [`0003_kiosk_and_invites.sql`](web/supabase/migrations/0003_kiosk_and_invites.sql) and [`0004_budget_grants_bundles.sql`](web/supabase/migrations/0004_budget_grants_bundles.sql), then [`web/supabase/seed.sql`](web/supabase/seed.sql) (edit the seed emails to your own). In production the `rsvps` table is filled from rsv.pizza's RSVP list. Emails must be stored lower-case and phones as E.164.
+The app runs on **Cloudflare Workers** (via [vinext](https://github.com/cloudflare/vinext)) with a **D1** database bound as `DB` in [`web/cloudflare.config.ts`](web/cloudflare.config.ts). The production database `rsvpizza` (`4c79d4e7-b9b3-4438-97a1-70ea79e21a64`, eastern North America) already exists, with [`web/migrations/0001_init.sql`](web/migrations/0001_init.sql) applied and the demo event seeded.
+
+```bash
+cd web
+npx cf auth login                 # once
+npm run db:migrate                # apply any new files in web/migrations to production D1
+npm run db:migrate:local && npm run db:seed:local   # local D1 for `npm run dev` / `npm start`
+```
+
+New schema changes go in a new `web/migrations/000N_*.sql` file. In production the `rsvps` table is filled from rsv.pizza's RSVP list. Emails must be stored lower-case and phones as E.164 ([`web/d1/seed.sql`](web/d1/seed.sql) shows the shape).
 
 ### 3. Privy
 
@@ -158,13 +167,21 @@ Create an app, enable **Email, SMS, Google**, and turn on **embedded wallets →
 
 Create an API key and a **sponsorship policy** on **Base / Base Sepolia**, restricted to your `RsvpTickets` address. The app calls `api.pimlico.io/v2/<8453|84532>/rpc` automatically from `NEXT_PUBLIC_CHAIN`.
 
-### 5. Web
+### 5. Web (Cloudflare Workers)
 
 ```bash
 cd web
-cp .env.example .env.local   # fill everything in
+cp .env.example .env            # public build-time settings (NEXT_PUBLIC_*)
+cp .dev.vars.example .dev.vars  # server secrets for local dev
 npm install
-npm run dev
+npm run dev                     # Vite + workerd, real local D1
+```
+
+Deploy:
+
+```bash
+npx cf workers secrets put PRIVY_APP_SECRET    # …and each other name in .dev.vars.example
+npm run deploy                                 # build + deploy the Worker "rsvpizza"
 ```
 
 - Guest: `http://localhost:3000/e/pizza-night-nyc` (log in with a seeded email)
@@ -175,6 +192,7 @@ npm run dev
 ```bash
 cd contracts && forge test                         # 36 tests: vouchers, replay, expiry, soulbound fuzz, redeem, admin override, roles, pause
 cd web && npm run typecheck && npm run lint && npm run build
+cd web && npm run test:db                          # 37 ledger/repo tests on a real local D1 (incl. parallel double-spend races)
 anvil --chain-id 84532 --optimism &                # local OP-stack node posing as Base Sepolia
 cd web && npm run verify:voucher                   # e2e on "Base": EIP-712 domain, cross-chain replay, claim, admin overrides
 ```
@@ -187,6 +205,7 @@ cd web && npm run verify:voucher                   # e2e on "Base": EIP-712 doma
 - **Redemption uses `_update(account, 0x…dEaD)` instead of `_burn`.** That matches "send to the dEaD address" and gives a public "drinks poured" counter (`balanceOf(0x…dEaD, id)`), without running receiver hooks.
 - **Tokens are only moved by the holder.** Approvals are disabled, so the guest's own smart account calls `redeemTicket`; the bartender's tap is what triggers that call on the guest's phone.
 - **Bundler/paymaster go through a server proxy** rather than putting the Pimlico key in the browser.
+- **Cloudflare instead of Supabase.** The database is D1 (SQLite) and the app runs on Workers via vinext. Postgres's `plpgsql` functions and advisory locks became single atomic `INSERT … SELECT … WHERE` statements in [`web/src/lib/server/ledger.ts`](web/src/lib/server/ledger.ts).
 - **An off-chain ledger runs alongside the chain.** Optimistic UI needs a double-spend check that answers in about 100 ms, which block confirmation can't.
 
 ## Project map
@@ -209,5 +228,8 @@ web/src/lib/theme.ts                          Visual 2FA palette + deterministic
 web/src/components/guest/*                    Auth, Claim, Wallet, Redeem, Success, LiveClock
 web/src/components/guest/HoldToRedeem.tsx     1.5 s long-press trigger with contrast-aware fill
 web/src/components/host/*                     Door list, Master ledger, Host Vouch, Wingman Transfer, Settings, CSV
-web/supabase/migrations/0001_init.sql         schema + record_redemption()
+web/migrations/0001_init.sql                  D1 (SQLite) schema
+web/src/lib/server/{d1,repo,ledger}.ts        D1 binding, event/RSVP repository, atomic ledger writes
+web/cloudflare.config.ts                      Worker config: D1 binding, declared secrets
+web/scripts/test/d1-ledger.test.ts            ledger tests against local D1 (Miniflare)
 ```

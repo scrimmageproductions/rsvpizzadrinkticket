@@ -4,7 +4,7 @@ import { z } from "zod";
 import { handler, json } from "@/lib/server/http";
 import { HttpError, requireUser } from "@/lib/server/auth";
 import { allocationOf, findRsvp, loadEvent } from "@/lib/server/guests";
-import { db } from "@/lib/server/supabase";
+import { recordClaim, recordPinFailure } from "@/lib/server/repo";
 import { claimIdFor, signClaimBatch, VOUCHER_TTL_SECONDS } from "@/lib/server/signer";
 import { expectedSmartAccount } from "@/lib/server/chain";
 import { chain, TICKETS_ADDRESS } from "@/lib/chain";
@@ -48,7 +48,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/events/[eventId]
     throw new HttpError(429, "pin_locked", "Too many wrong PINs — ask the door staff for help.");
   }
   if (!sameSecret(body.pin, event.event_pin)) {
-    await db().from("rsvps").update({ pin_failures: rsvp.pin_failures + 1 }).eq("id", rsvp.id);
+    await recordPinFailure(rsvp.id);
     throw new HttpError(403, "wrong_pin", "That PIN doesn't match. Look for the sign in the venue.");
   }
 
@@ -75,17 +75,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/events/[eventId]
   const deadline = BigInt(Math.floor(Date.now() / 1000) + VOUCHER_TTL_SECONDS);
   const signature = await signClaimBatch({ to: expected, ids, amounts, claimId, deadline });
 
-  const { error } = await db()
-    .from("rsvps")
-    .update({
-      wallet_address: expected,
-      claim_id: claimId,
-      claimed_at: rsvp.claimed_at ?? new Date().toISOString(),
-      claimed_bundle: bundle,
-      pin_failures: 0,
-    })
-    .eq("id", rsvp.id);
-  if (error) throw error;
+  await recordClaim(rsvp.id, { wallet: expected, claimId, claimedAt: new Date().toISOString(), bundle });
 
   const voucher: ClaimVoucher = {
     contract: TICKETS_ADDRESS,

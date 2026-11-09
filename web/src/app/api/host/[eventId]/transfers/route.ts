@@ -2,7 +2,8 @@ import { after } from "next/server";
 import { z } from "zod";
 import { handler, json } from "@/lib/server/http";
 import { HttpError, requireHost } from "@/lib/server/auth";
-import { db, type RsvpRow } from "@/lib/server/supabase";
+import { getRsvp } from "@/lib/server/repo";
+import { recordTransfer, setTransferHashes } from "@/lib/server/ledger";
 import { adminTransferOnChain } from "@/lib/server/adminAccount";
 
 const Body = z.object({
@@ -28,27 +29,21 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/t
   const staff = await requireHost(req);
   const body = Body.parse(await req.json());
 
-  const { data: rows, error: rErr } = await db()
-    .from("rsvps").select("*").eq("event_id", eventId).in("id", [body.fromRsvpId, body.toRsvpId]);
-  if (rErr) throw rErr;
-  const from = (rows as RsvpRow[]).find((r) => r.id === body.fromRsvpId);
-  const to = (rows as RsvpRow[]).find((r) => r.id === body.toRsvpId);
+  const [from, to] = await Promise.all([getRsvp(eventId, body.fromRsvpId), getRsvp(eventId, body.toRsvpId)]);
   if (!from || !to) throw new HttpError(404, "rsvp_not_found");
   if (!from.wallet_address) throw new HttpError(409, "not_claimed", "That guest never claimed tickets.");
 
-  const { data: transferId, error } = await db().rpc("record_transfer", {
-    p_event_id: eventId,
-    p_from: from.id,
-    p_to: to.id,
-    p_token_id: body.tokenId,
-    p_amount: body.amount,
-    p_moved_by: staff.emails[0] ?? staff.userId,
+  // Atomic: both balances checked and the row written in one D1 statement (lib/server/ledger.ts).
+  const r = await recordTransfer({
+    eventId,
+    fromRsvpId: from.id,
+    toRsvpId: to.id,
+    tokenId: body.tokenId,
+    amount: body.amount,
+    movedBy: staff.emails[0] ?? staff.userId,
   });
-  if (error) {
-    const code = Object.keys(MESSAGES).find((c) => error.message.includes(c));
-    if (code) throw new HttpError(409, code, MESSAGES[code]);
-    throw error;
-  }
+  if (!r.ok) throw new HttpError(409, r.code, MESSAGES[r.code] ?? r.code);
+  const transferId = r.id;
 
   after(async () => {
     try {
@@ -58,10 +53,10 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/t
         body.tokenId,
         body.amount,
         async (userOpHash) => {
-          await db().from("transfers").update({ user_op_hash: userOpHash }).eq("id", transferId);
+          await setTransferHashes(transferId, { userOpHash });
         },
       );
-      await db().from("transfers").update({ tx_hash: txHash }).eq("id", transferId);
+      await setTransferHashes(transferId, { txHash });
     } catch (e) {
       console.error("adminTransfer failed", transferId, e);
     }

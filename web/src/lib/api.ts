@@ -30,7 +30,7 @@ export function useApi() {
         },
         body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
       });
-      const body = await res.json().catch(() => ({}));
+      const body = (await res.json().catch(() => ({}))) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
       if (!res.ok) throw new ApiError(res.status, body.error ?? "error", body.message ?? body.error ?? res.statusText, body);
       return body as T;
     },

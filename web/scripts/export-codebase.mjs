@@ -11,7 +11,7 @@ const out = resolve(process.argv[2] ?? join(ROOT, "codebase-export.txt"));
 /** Sections in review order: chain → data → server → client. */
 const SECTIONS = [
   ["SMART CONTRACT (Foundry)", ["contracts/src", "contracts/script", "contracts/test"]],
-  ["DATABASE SCHEMA (Supabase / Postgres)", ["web/supabase"]],
+  ["DATABASE SCHEMA (Cloudflare D1 / SQLite)", ["web/migrations", "web/d1"]],
   ["SERVER LIBRARIES", ["web/src/lib/server"]],
   ["API ROUTES", ["web/src/app/api"]],
   ["SHARED LIBRARIES (theme, chain, ERC-4337, backend switch, demo store)", ["web/src/lib"]],
@@ -20,14 +20,17 @@ const SECTIONS = [
   ["UI COMPONENTS — host (Door list, Ledger, Vouch, Transfer, Settings, CSV)", ["web/src/components/host"]],
   ["UI COMPONENTS — shared", ["web/src/components"]],
   ["NEXT.JS PAGES & LAYOUT", ["web/src/app"]],
-  ["SCRIPTS", ["web/scripts"]],
+  ["SCRIPTS & TESTS", ["web/scripts"]],
+  ["CLOUDFLARE WORKER CONFIG", ["web/cloudflare.config.ts", "web/vite.config.ts"]],
 ];
 
 const EXT = /\.(sol|ts|tsx|mjs|sql|css)$/;
 const SKIP = new Set(["web/src/lib/abi.ts", "web/scripts/export-codebase.mjs"]);
 
 const walk = (dir) =>
-  readdirSync(dir)
+  statSync(dir).isFile()
+    ? [dir]
+    : readdirSync(dir)
     .sort()
     .flatMap((name) => {
       const p = join(dir, name);

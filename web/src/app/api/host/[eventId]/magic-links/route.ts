@@ -2,7 +2,8 @@ import { PrivyClient } from "@privy-io/node";
 import { handler, json } from "@/lib/server/http";
 import { requireHost } from "@/lib/server/auth";
 import { loadEvent } from "@/lib/server/guests";
-import { db, type RsvpRow } from "@/lib/server/supabase";
+import { bindPrivyUser, listInviteTargets, recordInvite } from "@/lib/server/repo";
+import type { RsvpRow } from "@/lib/server/d1";
 import { signToken } from "@/lib/server/tokens";
 import { preArrivalEmail, sendEmail } from "@/lib/server/email";
 import type { PreArrivalResult } from "@/lib/types";
@@ -28,9 +29,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/m
   const event = await loadEvent(eventId);
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin).replace(/\/$/, "");
 
-  const { data, error } = await db()
-    .from("rsvps").select("*").eq("event_id", eventId).eq("status", "rsvpd").is("claimed_at", null);
-  if (error) throw error;
+  const rows = await listInviteTargets(eventId);
 
   const privy = new PrivyClient({ appId: process.env.NEXT_PUBLIC_PRIVY_APP_ID!, appSecret: process.env.PRIVY_APP_SECRET! });
   const result: PreArrivalResult = { sent: [], skipped: [] };
@@ -44,7 +43,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/m
     try {
       const userId = r.privy_user_id ?? (await ensurePrivyUser(privy, r.email));
       if (!r.privy_user_id) {
-        await db().from("rsvps").update({ privy_user_id: userId }).eq("id", r.id).is("privy_user_id", null);
+        await bindPrivyUser(r.id, userId);
       }
       const token = signToken({ k: "invite", e: eventId, r: r.id, x: Date.now() + INVITE_TTL_MS });
       const link = `${appUrl}/e/${encodeURIComponent(eventId)}?invite=${token}`;
@@ -52,10 +51,7 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/m
         to: r.email,
         ...preArrivalEmail({ name: r.name, eventName: event.name, venue: event.venue, link }),
       });
-      await db()
-        .from("rsvps")
-        .update({ invited_at: new Date().toISOString(), invite_count: (r.invite_count ?? 0) + 1 })
-        .eq("id", r.id);
+      await recordInvite(r.id);
       result.sent.push({ rsvpId: r.id, name: r.name, to: r.email, link, delivered });
     } catch (e) {
       console.error("pre-arrival link failed", r.id, e);
@@ -64,7 +60,6 @@ export const POST = handler(async (req, ctx: RouteContext<"/api/host/[eventId]/m
   };
 
   // Small batches keep us well under Privy / email provider rate limits.
-  const rows = data as RsvpRow[];
   for (let i = 0; i < rows.length; i += 5) await Promise.all(rows.slice(i, i + 5).map(one));
   return json(result);
 });
