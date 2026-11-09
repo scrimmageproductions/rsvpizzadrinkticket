@@ -1,7 +1,8 @@
 # Build, test and deploy the rsvpizza Worker (Cloudflare Workers + D1) on every push to main.
 #
-# One-time setup (GitHub → repo → Settings → Secrets and variables → Actions):
-#   Secret   CLOUDFLARE_API_TOKEN   Cloudflare API token: "Edit Cloudflare Workers" template + D1:Edit
+# One-time setup: Cloudflare API token ("Edit Cloudflare Workers" template + D1:Edit) saved as the
+# secret CLOUDFLARE_API_TOKEN — either in the GitHub Environment named below (Settings → Environments)
+# or as a repository secret (Settings → Secrets and variables → Actions). Both are picked up.
 # Optional repository variables (build-time, baked into the client bundle):
 #   NEXT_PUBLIC_PRIVY_APP_ID        leave unset → Demo Mode build
 #   NEXT_PUBLIC_CHAIN               base | baseSepolia (default baseSepolia)
@@ -26,7 +27,6 @@ permissions:
 
 env:
   CLOUDFLARE_ACCOUNT_ID: a6123ca142fce93d72adaae34b29148f
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   WORKER_URL: ${{ vars.WORKER_URL || 'https://rsvpizza.youngscrimmagebeats.workers.dev' }}
   NEXT_PUBLIC_PRIVY_APP_ID: ${{ vars.NEXT_PUBLIC_PRIVY_APP_ID }}
   NEXT_PUBLIC_CHAIN: ${{ vars.NEXT_PUBLIC_CHAIN || 'baseSepolia' }}
@@ -39,6 +39,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The GitHub Environment holding the token (its environment secrets are only visible to jobs
+    # that declare it). Deploys also show up under the repo's "Deployments" with the live URL.
+    environment:
+      name: CLOUDFLARE_API_TOKEN
+      url: ${{ vars.WORKER_URL || 'https://rsvpizza.youngscrimmagebeats.workers.dev' }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     defaults:
       run:
         working-directory: web
